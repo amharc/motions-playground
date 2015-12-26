@@ -24,15 +24,7 @@ data PureChainRepresentation = PureChainRepresentation
     , chains :: !(V.Vector (V.Vector BeadInfo))
     }
 
-instance Applicative m => Representation m PureChainRepresentation where
-    loadDump dump = pure undefined -- TODO
-
-    makeDump = pure undefined -- TODO
-
-    generateMove = undefined -- TODO
-
-    performMove = undefined -- TODO
-
+instance Applicative m => ReadRepresentation m PureChainRepresentation where
     getBinders PureChainRepresentation{..} f = f binders
     {-# INLINE getBinders #-}
 
@@ -44,3 +36,12 @@ instance Applicative m => Representation m PureChainRepresentation where
     
     getAtomAt pos PureChainRepresentation{..} = pure $ M.lookup pos space
     {-# INLINE getAtomAt #-}
+
+instance Applicative m => Representation m PureChainRepresentation where
+    loadDump dump = pure undefined -- TODO
+
+    makeDump = pure undefined -- TODO
+
+    generateMove = undefined -- TODO
+
+    performMove = undefined -- TODO

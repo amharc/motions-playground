@@ -19,14 +19,14 @@ import Bio.Motions.Representation.Class
 -- is willing to operate.
 class Callback m cb where
     -- |Computes the callback's result from scratch.
-    runCallback :: Representation m repr 
+    runCallback :: ReadRepresentation m repr 
         => repr 
         -- ^The representation.
         -> m cb
         -- ^The computed value.
 
     -- |Computes the callback's result after a move.
-    updateCallback :: Representation m repr
+    updateCallback :: ReadRepresentation m repr
         => repr
         -- ^The representation before making the move.
         -> cb

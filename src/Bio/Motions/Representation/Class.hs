@@ -17,11 +17,12 @@ import Control.Applicative
 import Control.Monad.Random
 import Data.MonoTraversable
 
+
 -- |Stores the simulation state and performs basic operations on it
 --
 -- 'm' denotes a 'Monad' (or 'Applicative') in which the
 -- simulation takes place
-class Representation m repr where
+class ReadRepresentation m repr => Representation m repr where
     -- |Loads the state from a 'Dump.Dump'
     loadDump :: Dump.Dump -> m repr
 
@@ -34,6 +35,8 @@ class Representation m repr where
     -- |Applies a 'Move' to the state
     performMove :: Move -> repr -> m repr
 
+-- |A read-only interface to a 'Representation' 
+class ReadRepresentation m repr where
     -- |Retrieves an arbitrary information about the represented binders
     -- Note: the implementation is allowed to return only a subset of binders,
     -- provided that every binder bound to some bead is represented.
