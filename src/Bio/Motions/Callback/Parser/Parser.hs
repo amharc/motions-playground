@@ -91,7 +91,7 @@ data Expr a where
     EChainIx  :: Node -> Expr Int
     EChromoIx :: Node -> Expr Int
 
-    EBelongs  :: Expr Node -> Expr AtomClass -> Expr Bool
+    EBelongs  :: Node -> AtomClass -> Expr Bool
 
 -- |An alias, for simplicity.
 type Parser a = Parsec String () a
@@ -193,7 +193,7 @@ instance Parseable Bool where
     mulop = reserved "AND" >> pure EAnd
 
     atom =   (reserved "NOT" >> ENot <$> atom)
-         <|> (reserved "BELONGS" >> parens (EBelongs <$> literal <* comma <*> literal))
+         <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
          <|> polyParse (Proxy :: Proxy Ord) (Proxy :: Proxy '[Int, Double])  (\sub -> do
                 lhs <- sub
                 op <-  choice
