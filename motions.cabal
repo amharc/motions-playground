@@ -21,6 +21,7 @@ library
                        Bio.Motions.Representation.Dump,
                        Bio.Motions.Callback.Class,
                        Bio.Motions.Callback.StandardScore,
+                       Bio.Motions.Callback.Parser.Parser,
                        Bio.Motions.Types
                        Bio.Motions.Engine
   -- other-modules:       
@@ -33,6 +34,7 @@ library
                        MonadRandom >=0.4 && <0.5,
                        mtl >=2.2 && <2.3,
                        containers >=0.5 && <0.6,
-                       transformers >=0.4 && <0.5
+                       transformers >=0.4 && <0.5,
+                       parsec >=3.1 && <3.2
   hs-source-dirs:      src
   default-language:    Haskell2010
