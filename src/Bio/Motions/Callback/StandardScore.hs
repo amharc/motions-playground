@@ -43,7 +43,7 @@ instance Monoid StandardScore where
 instance Monad m => Callback m StandardScore where
     runCallback repr = do
         numChains <- getNumberOfChains repr
-        mconcat <$> traverse (chainScore repr) [0..numChains-1]
+        fold <$> traverse (chainScore repr) [0..numChains-1]
 
     updateCallback repr prev Move{..} = do
         Just fromAtom <- getAtomAt moveFrom repr
