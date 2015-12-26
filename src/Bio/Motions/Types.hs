@@ -18,13 +18,13 @@ import qualified Data.Vector.Unboxed as U
 type Energy = Int
 
 -- |Represents the binding energy of a bead when connected to a binder of some type
-newtype EnergyVector = EnergyVector (U.Vector Int)
+newtype EnergyVector = EnergyVector { getEnergyVector :: U.Vector Int }
 
 -- |Represents a binder type
-newtype BinderType = BinderType Int
+newtype BinderType = BinderType { getBinderType :: Int }
 
 -- |Represents a binder type
-newtype BeadType = BeadType Int
+newtype BeadType = BeadType { getBeadType :: Int }
 
 -- |A 3D vector of Ints
 type Vec3 = V3 Int
