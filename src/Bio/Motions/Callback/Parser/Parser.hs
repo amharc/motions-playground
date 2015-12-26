@@ -17,13 +17,17 @@ Portability : unportable
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Bio.Motions.Callback.Parser.Parser
     ( CallbackFrequency(..)
     , AtomClass(..)
     , CallbackResult(..)
     , ParsedCallback(..)
     , Expr(..)
-    , Node
+    , Nat(..)
+    , Node(..)
+    , EC(..)
+    , ToNodeEx(..)
     , parseCallback) where
 
 import Bio.Motions.Callback.Class
@@ -31,6 +35,8 @@ import Data.Proxy
 import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)
+import GHC.Prim
+import Unsafe.Coerce
 
 -- |Represents the frequency a callback has to be run
 data CallbackFrequency = EveryNFrames Int | EveryNAcceptedFrames Int
@@ -39,65 +45,90 @@ data CallbackFrequency = EveryNFrames Int | EveryNAcceptedFrames Int
 data AtomClass = BeadClass Int | BinderClass Int
 
 -- |The return value of a callback
-data CallbackResult a where
-    CallbackSum     :: Expr a -> CallbackResult a
-    CallbackProduct :: Expr a -> CallbackResult a
-    CallbackList    :: Expr a -> CallbackResult a
+data CallbackResult c n a where
+    CallbackSum     :: Expr c n a -> CallbackResult c n a
+    CallbackProduct :: Expr c n a -> CallbackResult c n a
+    CallbackList    :: Expr c n a -> CallbackResult c n a
 
 -- |Represents a parsed callback
-data ParsedCallback a = ParsedCallback
+data ParsedCallback c n a = ParsedCallback
     { callbackFrequency :: CallbackFrequency
     , callbackName :: String
     , callbackArity :: Int
-    , callbackCondition :: Expr Bool
-    , callbackResult :: CallbackResult a
+    , callbackCondition :: Expr c n Bool
+    , callbackResult :: CallbackResult c n a
     }
 
 -- |A wrapper around node argument identifiers.
-newtype Node = Node { getNode :: Int }
+data Nat where
+    Zero :: Nat
+    Succ :: Nat -> Nat
     deriving (Eq, Show)
 
+data Node (n :: Nat) where
+    FirstNode :: Node (Succ n)
+    NextNode :: Node n -> Node (Succ n)
+
+class ToNodeEx (n :: Nat) where
+    toNodeEx :: Int -> Node n
+
+instance ToNodeEx Zero where
+    toNodeEx _ = error "Out of bounds"
+
+instance ToNodeEx n => ToNodeEx (Succ n) where
+    toNodeEx 0 = FirstNode
+    toNodeEx n = NextNode $ toNodeEx $ n - 1
+
+type family EC (c :: * -> Constraint) (n :: Nat) (a :: [*]) :: Constraint
+type instance EC c n '[] = (ToNodeEx n)
+type instance EC c n (t ': ts) = (c t, EC c n ts)
+
+class (c1 a, c2 a) => Both (c1 :: * -> Constraint) (c2 :: * -> Constraint) a
+instance (c1 a, c2 a) => Both c1 c2 a 
+
 -- |The AST of the callback DSL.
-data Expr a where
-    EAnd  :: Expr Bool -> Expr Bool -> Expr Bool
-    EOr   :: Expr Bool -> Expr Bool -> Expr Bool
-    ENot  :: Expr Bool -> Expr Bool
+-- 
+-- 'c' is a Constraint on the types of all subexpressions.
+data Expr c n a where
+    EAnd  :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
+    EOr   :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
+    ENot  :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool
 
-    ELt   :: Ord a => Expr a -> Expr a -> Expr Bool
-    ELte  :: Ord a => Expr a -> Expr a -> Expr Bool
-    EGt   :: Ord a => Expr a -> Expr a -> Expr Bool
-    EGte  :: Ord a => Expr a -> Expr a -> Expr Bool
-    EEq   :: Eq a  => Expr a -> Expr a -> Expr Bool
-    ENeq  :: Eq a  => Expr a -> Expr a -> Expr Bool
+    ELt   :: (EC c n '[a, Bool], Ord a) => Expr c n a -> Expr c n a -> Expr c n Bool
+    ELte  :: (EC c n '[a, Bool], Ord a) => Expr c n a -> Expr c n a -> Expr c n Bool
+    EGt   :: (EC c n '[a, Bool], Ord a) => Expr c n a -> Expr c n a -> Expr c n Bool
+    EGte  :: (EC c n '[a, Bool], Ord a) => Expr c n a -> Expr c n a -> Expr c n Bool
+    EEq   :: (EC c n '[a, Bool], Eq a)  => Expr c n a -> Expr c n a -> Expr c n Bool
+    ENeq  :: (EC c n '[a, Bool], Eq a)  => Expr c n a -> Expr c n a -> Expr c n Bool
 
-    EDist :: Expr Node -> Expr Node -> Expr Double
-    EInt  :: RealFrac a => Expr a -> Expr Int
-    EFlt  :: Expr Int -> Expr Double
-    EGr   :: Expr Double
+    EDist :: (EC c n '[Double]) => Node n -> Node n -> Expr c n Double
+    EInt  :: (EC c n '[a, Int], RealFrac a) => Expr c n a -> Expr c n Int
+    EFlt  :: (EC c n '[Int, Double]) => Expr c n Int -> Expr c n Double
+    EGr   :: (EC c n '[Double]) => Expr c n Double
 
-    EAdd  :: Num a => Expr a -> Expr a -> Expr a
-    ESub  :: Num a => Expr a -> Expr a -> Expr a
-    EMul  :: Num a => Expr a -> Expr a -> Expr a
-    EDiv  :: Fractional a => Expr a -> Expr a -> Expr a
-    EIDiv :: Integral a => Expr a -> Expr a -> Expr a
-    EMod  :: Integral a => Expr a -> Expr a -> Expr a
+    EAdd  :: (EC c n '[a], Num a) => Expr c n a -> Expr c n a -> Expr c n a
+    ESub  :: (EC c n '[a], Num a) => Expr c n a -> Expr c n a -> Expr c n a
+    EMul  :: (EC c n '[a], Num a) => Expr c n a -> Expr c n a -> Expr c n a
+    EDiv  :: (EC c n '[a], Fractional a) => Expr c n a -> Expr c n a -> Expr c n a
+    EIDiv :: (EC c n '[a], Integral a) => Expr c n a -> Expr c n a -> Expr c n a
+    EMod  :: (EC c n '[a], Integral a) => Expr c n a -> Expr c n a -> Expr c n a
 
-    EMin  :: Ord a => Expr a -> Expr a -> Expr a
-    EMax  :: Ord a => Expr a -> Expr a -> Expr a
+    EMin  :: (EC c n '[a], Ord a) => Expr c n a -> Expr c n a -> Expr c n a
+    EMax  :: (EC c n '[a], Ord a) => Expr c n a -> Expr c n a -> Expr c n a
 
-    ELit  :: a -> Expr a
+    ELit  :: (EC c n '[a]) => a -> Expr c n a
 
-    EAtomIx   :: Node -> Expr Int
-    EChainIx  :: Node -> Expr Int
-    EChromoIx :: Node -> Expr Int
+    EAtomIx   :: (EC c n '[Int]) => Node n -> Expr c n Int
+    EChainIx  :: (EC c n '[Int]) => Node n -> Expr c n Int
+    EChromoIx :: (EC c n '[Int]) => Node n -> Expr c n Int
 
-    EBelongs  :: Node -> AtomClass -> Expr Bool
+    EBelongs  :: (EC c n '[Bool]) => Node n -> AtomClass -> Expr c n Bool
 
 -- |An alias, for simplicity.
 type Parser a = Parsec String () a
 
 -- |Parses a callback
-parseCallback :: Parseable a => Parser (ParsedCallback a)
+parseCallback :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (ParsedCallback c n a)
 parseCallback = do
     reserved "CALLBACK"
     name <- stringLiteral
@@ -126,30 +157,30 @@ parseCallback = do
         }
 
 -- |Parses an expression, where @expr ::= 'term' | 'term' 'addop' expr@
-expr :: Parseable a => Parser (Expr a)
+expr :: Parseable c n a => Parser (Expr c n a)
 expr = term `chainl1` addop
 
 -- |Parses a term, where @term ::= 'factor' | 'factor' 'mulop' term@
-term :: Parseable a => Parser (Expr a)
+term :: Parseable c n a => Parser (Expr c n a)
 term = factor `chainl1` mulop
 
 -- |Parses a factor, where @factor ::= (expr) | 'atom'@.
-factor :: Parseable a => Parser (Expr a)
+factor :: Parseable c n a => Parser (Expr c n a)
 factor = parens expr <|> atom
 
 -- |An auxiliary class providing common parsers.
-class Parseable a where
+class EC c n '[a] => Parseable c n a where
     -- |Parses an atom.
-    atom :: Parser (Expr a)
+    atom :: Parser (Expr c n a)
 
     -- |Parses an additive binary operator.
-    addop :: Parser (Expr a -> Expr a -> Expr a)
+    addop :: Parser (Expr c n a -> Expr c n a -> Expr c n a)
 
     -- |Parses a multiplicative binary operator.
-    mulop :: Parser (Expr a -> Expr a -> Expr a)
+    mulop :: Parser (Expr c n a -> Expr c n a -> Expr c n a)
 
 -- |Integral expressions.
-instance Parseable Int where
+instance EC c n '[Int, Double] => Parseable c n Int where
     addop =   (reservedOp "+" >> pure EAdd)
           <|> (reservedOp "-" >> pure ESub)
 
@@ -166,10 +197,10 @@ instance Parseable Int where
           <|> (reserved "MAX" >> parens (EMax <$> expr <* comma <*> expr))
             where
               int =   try expr
-                  <|> EInt <$> (expr :: Parser (Expr Double))
+                  <|> EInt <$> (expr :: Parser (Expr c n Double))
 
 -- |Floating-point expressions.
-instance Parseable Double where
+instance EC c n '[Int, Double] => Parseable c n Double where
     addop =   (reservedOp "+" >> pure EAdd)
           <|> (reservedOp "-" >> pure ESub)
 
@@ -178,23 +209,23 @@ instance Parseable Double where
 
     atom  =   literal
           <|> (reserved "GR" >> parens (pure EGr))
-          <|> (reserved "DIST" >> parens (EDist <$> literal <* comma <*> literal))
+          <|> (reserved "DIST" >> parens (EDist <$> constant <* comma <*> constant))
           <|> (reserved "MIN" >> parens (EMin <$> expr <* comma <*> expr))
           <|> (reserved "MAX" >> parens (EMax <$> expr <* comma <*> expr))
           <|> (reserved "FLT" >> parens flt)
             where
               flt =   try expr
-                  <|> EFlt <$> (expr :: Parser (Expr Int))
+                  <|> EFlt <$> (expr :: Parser (Expr c n Int))
 
 -- |Boolean expressions.
-instance Parseable Bool where
+instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
     addop = reserved "OR" >> pure EOr
 
     mulop = reserved "AND" >> pure EAnd
 
     atom =   (reserved "NOT" >> ENot <$> atom)
          <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
-         <|> polyParse (Proxy :: Proxy Ord) (Proxy :: Proxy '[Int, Double])  (\sub -> do
+         <|> polyParse (Proxy :: Proxy (Both Ord c)) (Proxy :: Proxy n) (Proxy :: Proxy '[Int, Double])  (\sub -> do
                 lhs <- sub
                 op <-  choice
                        [ reservedOp "==" >> pure EEq
@@ -204,11 +235,16 @@ instance Parseable Bool where
                        , reservedOp ">"  >> pure EGt
                        , reservedOp ">=" >> pure EGte
                        ]
-                op lhs <$> sub
+
+                res <- op lhs <$> sub
+
+                -- Becduse (Both Ord c) entails c, it is actually safe, as Expr c n a
+                -- is contravariant in c wrt entailment.
+                pure (unsafeCoerce (res :: Expr (Both Ord c) n Bool) :: Expr c n Bool)
              )
 
 -- |A literal.
-literal :: ParseConstant a => Parser (Expr a)
+literal :: (EC c n '[a], ParseConstant a) => Parser (Expr c n a)
 literal = ELit <$> constant
 
 -- |A helper class providing 'constant' parsers.
@@ -226,8 +262,8 @@ instance ParseConstant Double where
              <|> fromIntegral <$> integer
 
 -- |Node (parameter) identifier constants.
-instance ParseConstant Node where
-    constant = reserved "X" >> Node <$> constant
+instance ToNodeEx n => ParseConstant (Node n) where
+    constant = reserved "X" >> toNodeEx <$> constant
 
 -- |Atom class constants.
 instance ParseConstant AtomClass where
@@ -237,29 +273,30 @@ instance ParseConstant AtomClass where
 -- |Provides a type-polymorphic 'choice'.
 --
 -- 'xs' is a list of types which will be tried in the specified order.
--- 'constr' is a Constraint which ought to be satisfied by all those types.
-class PolyParse constr xs where
+-- 'c' is a Constraint which ought to be satisfied by all those types.
+class PolyParse c n xs where
     -- |The parsing function
     polyParse ::
-           proxy constr
+           proxy c
            -- ^A proxy with the constraint
-        -> proxy' xs
+        -> proxy' n
+           -- ^A proxy with the arity
+        -> proxy'' xs
            -- ^A proxy with the types list
-        -> (forall cand. constr cand => Parser (Expr cand) -> Parser a)
+        -> (forall x. c x => Parser (Expr c n x) -> Parser a)
            -- ^The parsng function
         -> Parser a
            -- ^The result of the first suceeding parsing function,
            -- called with 'expr' for the respective type.
 
 -- |The base case.
-instance PolyParse constr '[] where
-    polyParse _ _ _ = fail "PolyParse: no candidate suceeded"
+instance PolyParse c n '[] where
+    polyParse _ _ _ _ = fail "PolyParse: no candidate suceeded"
 
 -- |The recursive case.
-instance (Parseable x, PolyParse constr xs, constr x)
-         => PolyParse constr (x ': xs) where
-    polyParse pC _ run = try (run (expr :: Parser (Expr x)))
-                       <|> polyParse pC (Proxy :: Proxy xs) run
+instance (Parseable c n x, PolyParse c n xs) => PolyParse c n (x ': xs) where
+    polyParse pC pN _ run = try (run (expr :: Parser (Expr c n x)))
+                       <|> polyParse pC pN (Proxy :: Proxy xs) run
 
 -- |The language definition.
 dslDef :: P.LanguageDef st
