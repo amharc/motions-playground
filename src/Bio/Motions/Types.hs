@@ -38,7 +38,8 @@ data BinderInfo = BinderInfo
 -- |Represents the information about a particular bead
 data BeadInfo = BeadInfo
     { beadPosition :: !Vec3 -- ^ The position of the bead
-    , beadType :: !EnergyVector -- ^ The type of the binder
+    , beadType :: !BeadType -- ^ The type of the bead
+    , beadEV :: !EnergyVector -- ^ The energy vector of the binder
     }
 
 -- |Represents a move of an atom
@@ -60,7 +61,7 @@ instance HaveEnergyBetween EnergyVector BinderType where
     {-# INLINE energyBetween #-}
 
 instance HaveEnergyBetween BinderInfo BeadInfo where
-    energyBetween BinderInfo{..} BeadInfo{..} = energyBetween beadType binderType
+    energyBetween BinderInfo{..} BeadInfo{..} = energyBetween beadEV binderType
     {-# INLINE energyBetween #-}
 
 instance HaveEnergyBetween BeadInfo BinderInfo where

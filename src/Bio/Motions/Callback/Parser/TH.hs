@@ -84,14 +84,18 @@ createCallback ParsedCallback{..} = [d|
         runCallback repr = forEachKNodes repr run
           where
             run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
-            run args =  pure . THCallback $ 
-                $(eval EvalCtx { args = mkName "args", repr = mkName "repr" } expr)
+            run args =  pure $ 
+                if $(ev callbackCondition) then
+                    THCallback $(ev expr)
+                else
+                    mempty
 
         updateCallback = undefined -- TODO
     |]
   where
     CallbackSum expr = callbackResult
     name = litT $ strTyLit callbackName
+    ev x = eval EvalCtx { args = mkName "args", repr = mkName "repr" } x
 
 quoteCallback :: forall proxy n. (ForEachKNodes n, ToNodeEx n, LiftProxy n) => proxy n -> String -> Q [Dec]
 quoteCallback p str =
@@ -143,8 +147,8 @@ eval ctx (EMax lhs rhs) =  [| $(eval ctx lhs) `max` $(eval ctx rhs) |]
 
 eval EvalCtx{..} (EBelongs node cls) = [|
     case (cls, access node $(varE args)) of
-        (BeadClass x, Bead BeadType{..}) -> x == getBinderType binderType
-        (BinderClass x, Binder BinderType{..}) -> x == getBeadType beadType
+        (BeadClass x, Bead BeadInfo{..}) -> x == getBeadType beadType
+        (BinderClass x, Binder BinderInfo{..}) -> x == getBinderType binderType
         _ -> False
     |]
 
