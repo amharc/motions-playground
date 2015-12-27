@@ -143,12 +143,20 @@ parseCallbackWithArity = (reserved "SUM" >> CallbackSum <$> expr)
 class TryNatsBelow c (n :: Nat) where
     tryNatsBelow :: Proxy# n -> Proxy# c -> Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
 
-instance TryNatsBelow c Zero where
-    tryNatsBelow _ _ _ _ = error "Out of bounds"
+instance TryNatsBelow' c n 'Zero => TryNatsBelow c n where
+    tryNatsBelow = tryNatsBelow' (proxy# :: Proxy# Zero)
 
-instance (c (Succ n), TryNatsBelow c n) => TryNatsBelow c (Succ n) where
-    tryNatsBelow p pC 0 run = run p
-    tryNatsBelow _ pC n run = tryNatsBelow (proxy# :: Proxy# n) pC (n - 1) run
+class TryNatsBelow' c (n :: Nat) (acc :: Nat) where
+    tryNatsBelow' :: Proxy# acc -> Proxy# n -> Proxy# c ->
+                    Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
+
+instance TryNatsBelow' c Zero acc where
+    tryNatsBelow' _ _ _ _ _ = error "Out of bounds"
+
+instance (c acc, TryNatsBelow' c n (Succ acc)) => TryNatsBelow' c (Succ n) acc where
+    tryNatsBelow' _ _ pC 0 run = run (proxy# :: Proxy# acc)
+    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (Succ acc)) (proxy# :: Proxy# n) pC (n - 1) run
+
 
 class EC c n a => ECc c a n
 instance EC c n a => ECc c a n
