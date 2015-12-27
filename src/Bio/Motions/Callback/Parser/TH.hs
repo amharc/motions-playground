@@ -83,10 +83,15 @@ instance LiftProxy Zero where
 instance LiftProxy n => LiftProxy (Succ n) where
     liftProxy _ = [t| Succ $(liftProxy (proxy# :: Proxy# n)) |]
 
+-- |Convenient alias.
 type LiftsA = Both Lift LiftProxy
+
+-- |Convenient alias.
 type LiftsN = Both ForEachKNodes LiftProxy
 
-createCallback :: forall n a. (ForEachKNodes n, LiftProxy a, LiftProxy n) => ParsedCallback LiftsA n a -> Q [Dec]
+-- |Creates Template Haskell declarations from a suitable 'ParsedCallback'.
+createCallback :: forall n a. (ForEachKNodes n, LiftProxy a, LiftProxy n) 
+    => ParsedCallback LiftsA n a -> Q [Dec]
 createCallback ParsedCallback{..} =
     case callbackResult of
         CallbackSum expr -> [d|
@@ -156,10 +161,12 @@ createCallback ParsedCallback{..} =
                     , repr = mkName "repr"
                     } x
 
+-- |A callback quasiquoter, accepting any suitable callback with arity strictly less than 'maxb'.
 quoteCallback :: MaxNConstraint LiftsA LiftsN maxn => Proxy# maxn -> String -> Q [Dec]
 quoteCallback p str =
     case P.parse (parseCallback p) "TH" str of
-        Right ((ParsedCallbackWrapper exp) :: ParsedCallbackWrapper LiftsA LiftsN) -> createCallback exp
+        Right ((ParsedCallbackWrapper exp) :: ParsedCallbackWrapper LiftsA LiftsN) ->
+            createCallback exp
         Left err -> fail $ show err
 
 -- |A callback quasiquoter
@@ -245,17 +252,21 @@ class ForEachKNodes (n :: Nat) where
     forEachKNodes :: (Monoid r, ReadRepresentation m repr, Monad m)
         => repr -> (Vec n Atom -> m r) -> m r
 
+-- |The base case.
 instance ForEachKNodes Zero where
     forEachKNodes _ fun = fun Nil
     {-# INLINE forEachKNodes #-}
 
+-- |The recursive case.
 instance ForEachKNodes n => ForEachKNodes (Succ n) where
     forEachKNodes repr fun = forEachKNodes repr $ \xs ->
         forEachNode repr $ \x -> fun $ Cons x xs
     {-# INLINE forEachKNodes #-}
 
--- |Performs a monadic action over all nodes (i.e. beads and atoms) and gathers the results.
-forEachNode :: forall m r repr. (Monoid r, ReadRepresentation m repr, Monad m) => repr -> (Atom -> m r) -> m r
+-- |Performs a monadic action over all nodes (i.e. beads and atoms)
+-- and gathers the results monoidally.
+forEachNode :: forall m r repr. (Monoid r, ReadRepresentation m repr, Monad m)
+    => repr -> (Atom -> m r) -> m r
 forEachNode repr f = do
     numChains <- getNumberOfChains repr
     binders <- getBinders repr $ go Binder

@@ -62,6 +62,7 @@ data ParsedCallback c n a = ParsedCallback
     , callbackResult :: CallbackResult c n a
     }
 
+-- |Natural numbers
 data Nat where
     Zero :: Nat
     Succ :: Nat -> Nat
@@ -72,16 +73,23 @@ data Node (n :: Nat) where
     FirstNode :: Node (Succ n)
     NextNode :: Node n -> Node (Succ n)
 
+-- |Convert runtime natural 'Int's to type-level 'Nat's.
 class ToNodeEx (n :: Nat) where
+    -- |Converts an non-negative 'Int' to a 'Node' if it is strictly less than 'n'.
+    -- Fails otherwise.
     toNodeEx :: Int -> Node n
 
+-- |No non-negative 'Int' is smaller than 'Zero'
 instance ToNodeEx Zero where
     toNodeEx _ = error "Out of bounds"
 
+-- |The recursive case.
 instance ToNodeEx n => ToNodeEx (Succ n) where
     toNodeEx 0 = FirstNode
     toNodeEx n = NextNode $ toNodeEx $ n - 1
 
+-- |A useful constraint. 'EC' 'c' 'n' '[a_0, a_1, ...] means:
+-- 'ToNodeEx' 'n' and all of 'c' a_0, 'c' a_1, ...
 type family EC (c :: * -> Constraint) (n :: Nat) (a :: [*]) :: Constraint
 type instance EC c n '[] = (ToNodeEx n)
 type instance EC c n (t ': ts) = (c t, EC c n ts)
@@ -89,7 +97,7 @@ type instance EC c n (t ': ts) = (c t, EC c n ts)
 -- |The AST of the callback DSL.
 -- 
 -- 'c' is a Constraint on the types of all subexpressions.
--- 'n' is the arity.
+-- 'n' is the arity (i.e. the number of node arguments).
 data Expr c n a where
     EAnd  :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
     EOr   :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
@@ -130,44 +138,68 @@ type Parser a = Parsec String () a
 
 -- |An existential type wrapper, hiding the arity and the result type.
 data ParsedCallbackWrapper c cn where
-    ParsedCallbackWrapper :: (EC c n '[Int, Double, Bool, a], cn n) => ParsedCallback c n a -> ParsedCallbackWrapper c cn
+    ParsedCallbackWrapper ::
+        (EC c n '[Int, Double, Bool, a], cn n)
+        => ParsedCallback c n a
+        -> ParsedCallbackWrapper c cn
 
+-- |An existential type wrapper hiding the result type of a callback.
 data CallbackResultWrapper c n where
-    CallbackResultWrapper :: EC c n '[Int, Double, Bool, a] => CallbackResult c n a -> CallbackResultWrapper c n
+    CallbackResultWrapper ::
+           EC c n '[Int, Double, Bool, a]
+        => CallbackResult c n a
+        -> CallbackResultWrapper c n
 
-parseCallbackWithArity :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (CallbackResult c n a)
-parseCallbackWithArity = (reserved "SUM" >> CallbackSum <$> expr)
-                       <|> (reserved "PRODUCT" >> CallbackProduct <$> expr)
-                       <|> (reserved "LIST" >> CallbackList <$> expr)
+class TryNatsBelow c (limit :: Nat) where
+    -- |Runs a specified function for a particular runtime provided 'Nat'.
+    -- Because Dependent Haskell isn't a thing yet, this function
+    -- requires that this integer is less than a specified 'limit' :: 'Nat'
+    -- and fails otherwise.
+    tryNatsBelow :: Proxy# limit  -> Proxy# c 
+        -> Int
+        -- ^A runtime representation of the
+        -> (forall (m :: Nat). c m => Proxy# m -> x)
+        -- ^The function to be called
+        -> x
+        -- ^Its return value
 
-class TryNatsBelow c (n :: Nat) where
-    tryNatsBelow :: Proxy# n -> Proxy# c -> Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
-
-instance TryNatsBelow' c n 'Zero => TryNatsBelow c n where
+-- |The implementation.
+instance TryNatsBelow' c limit 'Zero => TryNatsBelow c limit where
     tryNatsBelow = tryNatsBelow' (proxy# :: Proxy# Zero)
 
-class TryNatsBelow' c (n :: Nat) (acc :: Nat) where
-    tryNatsBelow' :: Proxy# acc -> Proxy# n -> Proxy# c ->
+-- |See 'TryNatsBelow'. It represents a partial conversion, i.e.
+-- @n + 'acc' == result@, where n is the provided 'Int' and result is the
+-- target 'Nat', where @n < 'limit'@.
+class TryNatsBelow' c (limit :: Nat) (acc :: Nat) where
+    tryNatsBelow' :: Proxy# acc -> Proxy# limit -> Proxy# c ->
                     Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
 
+-- |@n < 'Zero'@ -- absurd.
 instance TryNatsBelow' c Zero acc where
     tryNatsBelow' _ _ _ _ _ = error "Out of bounds"
 
-instance (c acc, TryNatsBelow' c n (Succ acc)) => TryNatsBelow' c (Succ n) acc where
+-- | @(n + 1) + 'acc' == n + ('Succ' 'acc')@ and @(n + 1) < ('Succ' 'limit')@ iff @n < 'limit'@.
+instance (c acc, TryNatsBelow' c limit (Succ acc)) => TryNatsBelow' c (Succ limit) acc where
     tryNatsBelow' _ _ pC 0 run = run (proxy# :: Proxy# acc)
-    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (Succ acc)) (proxy# :: Proxy# n) pC (n - 1) run
+    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (Succ acc))
+                                               (proxy# :: Proxy# limit) pC (n - 1) run
 
 
+-- |'EC' with its arguments flipped.
 class EC c n a => ECc c a n
 instance EC c n a => ECc c a n
 
+-- |A convenient wrapper. See 'parseCallback'.
 type MaxNConstraint c cn maxn = (EC c maxn '[Int, Double, Bool], TryNatsBelow (Both (ECc c '[Int, Double, Bool]) cn) maxn)
 
+-- |Pullback of two morphisms of type @k -> 'Constraint'@
 class (c1 a, c2 a) => Both c1 c2 a
 instance (c1 a, c2 a) => Both c1 c2 a
 
 -- |Parses a callback with arity strictly less than 'maxn', whose internal types
--- must satisfy the constraint 'c'.
+-- must satisfy the constraint 'c'. The callback is parsed as Int-returning where possible,
+-- Double-returning otherwise. Moreover, it is required that all all numbers between
+-- 'Zero' (incl.) and 'maxn' (excl.) satsify the constraint 'cn'.
 parseCallback :: forall c cn maxn. MaxNConstraint c cn maxn
     => Proxy# maxn -> Parser (ParsedCallbackWrapper c cn)
 parseCallback pMaxN = do
@@ -198,6 +230,11 @@ parseCallback pMaxN = do
                 , callbackCondition = cond
                 , callbackResult = result
                 }
+
+    parseCallbackWithArity :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (CallbackResult c n a)
+    parseCallbackWithArity = (reserved "SUM" >> CallbackSum <$> expr)
+                           <|> (reserved "PRODUCT" >> CallbackProduct <$> expr)
+                           <|> (reserved "LIST" >> CallbackList <$> expr)
 
 -- |Parses an expression, where @expr ::= 'term' | 'term' 'addop' expr@
 expr :: Parseable c n a => Parser (Expr c n a)
