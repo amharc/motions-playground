@@ -12,6 +12,7 @@ Portability : unportable
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds #-}
 module Bio.Motions.Callback.StandardScore(StandardScore) where
 
 import Bio.Motions.Types
@@ -40,7 +41,7 @@ instance Monoid StandardScore where
     mappend = (+)
     {-# INLINE mappend #-}
 
-instance Monad m => Callback m StandardScore where
+instance Monad m => Callback m 'Pre StandardScore where
     runCallback repr = do
         numChains <- getNumberOfChains repr
         fold <$> traverse (chainScore repr) [0..numChains-1]

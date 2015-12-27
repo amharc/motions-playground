@@ -80,7 +80,7 @@ createCallback ParsedCallback{..} = [d|
         mempty = 0
         mappend = (+)
 
-    instance Monad m => Callback m (THCallback $(name)) where
+    instance Monad m => Callback m 'Post (THCallback $(name)) where
         runCallback repr = forEachKNodes repr run
           where
             run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
@@ -89,8 +89,6 @@ createCallback ParsedCallback{..} = [d|
                     THCallback $(ev expr)
                 else
                     mempty
-
-        updateCallback = undefined -- TODO
     |]
   where
     CallbackSum expr = callbackResult
