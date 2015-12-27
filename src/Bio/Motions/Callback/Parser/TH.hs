@@ -24,6 +24,7 @@ Portability : unportable
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeOperators #-}
 module Bio.Motions.Callback.Parser.TH where
 
 import Language.Haskell.TH
@@ -171,7 +172,7 @@ quoteCallback p str =
 
 -- |A callback quasiquoter
 callback = QuasiQuoter
-    { quoteDec = quoteCallback (proxy# :: Proxy# (Succ (Succ (Succ (Succ Zero)))))
+    { quoteDec = quoteCallback (proxy# :: Proxy# (ToNat 10))
     }
 
 -- |A fixed-width vector
@@ -184,6 +185,11 @@ data EvalCtx n = EvalCtx
     { args :: Q (TExp (Vec n Atom)) -- ^A typed expression representing the arguments vector
     , repr :: Name -- ^The name of the binding of the representation
     }
+
+-- |Convert 'TL.Nat' to 'Nat'.
+type family ToNat (n :: TL.Nat) :: Nat where
+    ToNat 0 = Zero
+    ToNat n = Succ (ToNat (n TL.- 1))
 
 -- |Type-safe !! on 'Vec'tors.
 access :: Node n -> Vec n a -> a
