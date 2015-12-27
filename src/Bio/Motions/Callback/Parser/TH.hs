@@ -182,6 +182,7 @@ data EvalCtx n = EvalCtx
 access :: Node n -> Vec n a -> a
 access FirstNode (Cons h _) = h
 access (NextNode n) (Cons _ t) = access n t
+{-# INLINE access #-}
 
 -- |A transformer of 'Expr' into typed expressions.
 eval :: EvalCtx n -> Expr LiftsA n a -> Q (TExp a)
