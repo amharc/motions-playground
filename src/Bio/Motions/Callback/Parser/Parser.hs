@@ -37,7 +37,6 @@ module Bio.Motions.Callback.Parser.Parser
     , parseCallback) where
 
 import Bio.Motions.Callback.Class
-import Data.Proxy
 import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)
@@ -261,7 +260,8 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
 
     atom =   (reserved "NOT" >> ENot <$> atom)
          <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
-         <|> polyParse (Proxy :: Proxy c) (Proxy :: Proxy Ord) (Proxy :: Proxy n) (Proxy :: Proxy '[Int, Double])  (\sub -> do
+         <|> polyParse (proxy# :: Proxy# c) (proxy# :: Proxy# Ord)
+                       (proxy# :: Proxy# n) (proxy# :: Proxy# '[Int, Double])  (\sub -> do
                 lhs <- sub
                 op <-  choice
                        [ reservedOp "==" >> pure EEq
@@ -310,13 +310,13 @@ instance ParseConstant AtomClass where
 class PolyParse c c' n xs where
     -- |The parsing function
     polyParse ::
-           proxy0 c
+           Proxy# c
            -- ^A proxy with the constraint
-        -> proxy1 c'
+        -> Proxy# c'
            -- ^A proxy with the constraint
-        -> proxy2 n
+        -> Proxy# n
            -- ^A proxy with the arity
-        -> proxy3 xs
+        -> Proxy# xs
            -- ^A proxy with the types list
         -> (forall x. (c' x, c x) => Parser (Expr c n x) -> Parser a)
            -- ^The parsng function
@@ -331,7 +331,7 @@ instance PolyParse c c' n '[] where
 -- |The recursive case.
 instance (Parseable c n x, PolyParse c c' n xs, c' x) => PolyParse c c' n (x ': xs) where
     polyParse pC pC' pN _ run = try (run (expr :: Parser (Expr c n x)))
-                       <|> polyParse pC pC' pN (Proxy :: Proxy xs) run
+                       <|> polyParse pC pC' pN (proxy# :: Proxy# xs) run
 
 -- |The language definition.
 dslDef :: P.LanguageDef st
