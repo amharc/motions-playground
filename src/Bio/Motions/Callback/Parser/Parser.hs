@@ -36,7 +36,6 @@ import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)
 import GHC.Prim
-import Unsafe.Coerce
 
 -- |Represents the frequency a callback has to be run
 data CallbackFrequency = EveryNFrames Int | EveryNAcceptedFrames Int
@@ -59,12 +58,12 @@ data ParsedCallback c n a = ParsedCallback
     , callbackResult :: CallbackResult c n a
     }
 
--- |A wrapper around node argument identifiers.
 data Nat where
     Zero :: Nat
     Succ :: Nat -> Nat
     deriving (Eq, Show)
 
+-- |A wrapper around node argument identifiers.
 data Node (n :: Nat) where
     FirstNode :: Node (Succ n)
     NextNode :: Node n -> Node (Succ n)
@@ -83,12 +82,10 @@ type family EC (c :: * -> Constraint) (n :: Nat) (a :: [*]) :: Constraint
 type instance EC c n '[] = (ToNodeEx n)
 type instance EC c n (t ': ts) = (c t, EC c n ts)
 
-class (c1 a, c2 a) => Both (c1 :: * -> Constraint) (c2 :: * -> Constraint) a
-instance (c1 a, c2 a) => Both c1 c2 a 
-
 -- |The AST of the callback DSL.
 -- 
 -- 'c' is a Constraint on the types of all subexpressions.
+-- 'n' is the arity.
 data Expr c n a where
     EAnd  :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
     EOr   :: (EC c n '[Bool]) => Expr c n Bool -> Expr c n Bool -> Expr c n Bool
@@ -225,7 +222,7 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
 
     atom =   (reserved "NOT" >> ENot <$> atom)
          <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
-         <|> polyParse (Proxy :: Proxy (Both Ord c)) (Proxy :: Proxy n) (Proxy :: Proxy '[Int, Double])  (\sub -> do
+         <|> polyParse (Proxy :: Proxy c) (Proxy :: Proxy Ord) (Proxy :: Proxy n) (Proxy :: Proxy '[Int, Double])  (\sub -> do
                 lhs <- sub
                 op <-  choice
                        [ reservedOp "==" >> pure EEq
@@ -236,11 +233,7 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
                        , reservedOp ">=" >> pure EGte
                        ]
 
-                res <- op lhs <$> sub
-
-                -- Becduse (Both Ord c) entails c, it is actually safe, as Expr c n a
-                -- is contravariant in c wrt entailment.
-                pure (unsafeCoerce (res :: Expr (Both Ord c) n Bool) :: Expr c n Bool)
+                op lhs <$> sub
              )
 
 -- |A literal.
@@ -273,30 +266,33 @@ instance ParseConstant AtomClass where
 -- |Provides a type-polymorphic 'choice'.
 --
 -- 'xs' is a list of types which will be tried in the specified order.
--- 'c' is a Constraint which ought to be satisfied by all those types.
-class PolyParse c n xs where
+-- 'c', 'c'' are additional Constraint which ought to be satisfied by all those types.
+-- 'n' is the arity, as usual.
+class PolyParse c c' n xs where
     -- |The parsing function
     polyParse ::
-           proxy c
+           proxy0 c
            -- ^A proxy with the constraint
-        -> proxy' n
+        -> proxy1 c'
+           -- ^A proxy with the constraint
+        -> proxy2 n
            -- ^A proxy with the arity
-        -> proxy'' xs
+        -> proxy3 xs
            -- ^A proxy with the types list
-        -> (forall x. c x => Parser (Expr c n x) -> Parser a)
+        -> (forall x. (c' x, c x) => Parser (Expr c n x) -> Parser a)
            -- ^The parsng function
         -> Parser a
            -- ^The result of the first suceeding parsing function,
            -- called with 'expr' for the respective type.
 
 -- |The base case.
-instance PolyParse c n '[] where
-    polyParse _ _ _ _ = fail "PolyParse: no candidate suceeded"
+instance PolyParse c c' n '[] where
+    polyParse _ _ _ _ _ = fail "PolyParse: no candidate suceeded"
 
 -- |The recursive case.
-instance (Parseable c n x, PolyParse c n xs) => PolyParse c n (x ': xs) where
-    polyParse pC pN _ run = try (run (expr :: Parser (Expr c n x)))
-                       <|> polyParse pC pN (Proxy :: Proxy xs) run
+instance (Parseable c n x, PolyParse c c' n xs, c' x) => PolyParse c c' n (x ': xs) where
+    polyParse pC pC' pN _ run = try (run (expr :: Parser (Expr c n x)))
+                       <|> polyParse pC pC' pN (Proxy :: Proxy xs) run
 
 -- |The language definition.
 dslDef :: P.LanguageDef st
