@@ -18,11 +18,17 @@ Portability : unportable
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Bio.Motions.Callback.Parser.Parser
     ( CallbackFrequency(..)
     , AtomClass(..)
     , CallbackResult(..)
     , ParsedCallback(..)
+    , ParsedCallbackWrapper(..)
+    , MaxNConstraint
+    , Both
     , Expr(..)
     , Nat(..)
     , Node(..)
@@ -53,7 +59,6 @@ data CallbackResult c n a where
 data ParsedCallback c n a = ParsedCallback
     { callbackFrequency :: CallbackFrequency
     , callbackName :: String
-    , callbackArity :: Int
     , callbackCondition :: Expr c n Bool
     , callbackResult :: CallbackResult c n a
     }
@@ -124,9 +129,41 @@ data Expr c n a where
 -- |An alias, for simplicity.
 type Parser a = Parsec String () a
 
--- |Parses a callback
-parseCallback :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (ParsedCallback c n a)
-parseCallback = do
+-- |An existential type wrapper, hiding the arity and the result type.
+data ParsedCallbackWrapper c cn where
+    ParsedCallbackWrapper :: (EC c n '[Int, Double, Bool, a], cn n) => ParsedCallback c n a -> ParsedCallbackWrapper c cn
+
+data CallbackResultWrapper c n where
+    CallbackResultWrapper :: EC c n '[Int, Double, Bool, a] => CallbackResult c n a -> CallbackResultWrapper c n
+
+parseCallbackWithArity :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (CallbackResult c n a)
+parseCallbackWithArity = (reserved "SUM" >> CallbackSum <$> expr)
+                       <|> (reserved "PRODUCT" >> CallbackProduct <$> expr)
+                       <|> (reserved "LIST" >> CallbackList <$> expr)
+
+class TryNatsBelow c (n :: Nat) where
+    tryNatsBelow :: Proxy# n -> Proxy# c -> Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
+
+instance TryNatsBelow c Zero where
+    tryNatsBelow _ _ _ _ = error "Out of bounds"
+
+instance (c (Succ n), TryNatsBelow c n) => TryNatsBelow c (Succ n) where
+    tryNatsBelow p pC 0 run = run p
+    tryNatsBelow _ pC n run = tryNatsBelow (proxy# :: Proxy# n) pC (n - 1) run
+
+class EC c n a => ECc c a n
+instance EC c n a => ECc c a n
+
+type MaxNConstraint c cn maxn = (EC c maxn '[Int, Double, Bool], TryNatsBelow (Both (ECc c '[Int, Double, Bool]) cn) maxn)
+
+class (c1 a, c2 a) => Both c1 c2 a
+instance (c1 a, c2 a) => Both c1 c2 a
+
+-- |Parses a callback with arity strictly less than 'maxn', whose internal types
+-- must satisfy the constraint 'c'.
+parseCallback :: forall c cn maxn. MaxNConstraint c cn maxn
+    => Proxy# maxn -> Parser (ParsedCallbackWrapper c cn)
+parseCallback pMaxN = do
     reserved "CALLBACK"
     name <- stringLiteral
 
@@ -136,22 +173,24 @@ parseCallback = do
 
     reserved "NODES"
     arity <- fromIntegral <$> natural
+    tryNatsBelow pMaxN (proxy# :: Proxy# (Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
+  where
+    rem :: forall n. (EC c n '[Int, Double, Bool], cn n) => String -> CallbackFrequency -> Proxy# n -> Parser (ParsedCallbackWrapper c cn)
+    rem name freq _ = do
+        reserved "WHERE"
+        cond <- expr :: Parser (Expr c n Bool)
 
-    reserved "WHERE"
-    cond <- expr
+        reserved "COMPUTE"
+        result <- try (CallbackResultWrapper <$> (parseCallbackWithArity :: Parser (CallbackResult c n Int)))
+                <|> (CallbackResultWrapper <$> (parseCallbackWithArity :: Parser (CallbackResult c n Double)))
 
-    reserved "COMPUTE"
-    result <-     (reserved "SUM" >> CallbackSum <$> expr)
-              <|> (reserved "PRODUCT" >> CallbackProduct <$> expr)
-              <|> (reserved "LIST" >> CallbackList <$> expr)
-
-    pure ParsedCallback
-        { callbackFrequency = freq
-        , callbackName = name
-        , callbackArity = arity
-        , callbackCondition = cond
-        , callbackResult = result
-        }
+        pure $ case result of
+            CallbackResultWrapper result -> ParsedCallbackWrapper ParsedCallback
+                { callbackFrequency = freq
+                , callbackName = name
+                , callbackCondition = cond
+                , callbackResult = result
+                }
 
 -- |Parses an expression, where @expr ::= 'term' | 'term' 'addop' expr@
 expr :: Parseable c n a => Parser (Expr c n a)

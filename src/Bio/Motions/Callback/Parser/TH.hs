@@ -22,6 +22,8 @@ Portability : unportable
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE ConstraintKinds #-}
 module Bio.Motions.Callback.Parser.TH where
 
 import Language.Haskell.TH
@@ -41,12 +43,18 @@ import Linear
 import qualified Text.Parsec as P
 import Data.Proxy
 import qualified GHC.TypeLits as TL
+import GHC.Prim
 
+-- |Represents the return value type of a callback.
 type family THCallbackResult (name :: TL.Symbol) :: *
 
+-- |Represents the callback arity, i.e. the number of
+-- node arguments.
 type family THCallbackArity (name :: TL.Symbol) :: Nat
 
 type role THCallback nominal
+-- |A wrapper around the callback return type, which will be provided an instance
+-- of 'Callback'.
 newtype THCallback (name :: TL.Symbol) = THCallback { getTHCallback :: THCallbackResult name }
 
 deriving instance Eq (THCallbackResult name) => Eq (THCallback name)
@@ -56,8 +64,9 @@ deriving instance Enum (THCallbackResult name) => Enum (THCallback name)
 deriving instance Real (THCallbackResult name) => Real (THCallback name)
 deriving instance Integral (THCallbackResult name) => Integral (THCallback name)
 
+-- |An auxiliary class used for lifting types into type expressions.
 class LiftProxy a where
-    liftProxy :: proxy a -> TypeQ
+    liftProxy :: Proxy# a -> TypeQ
 
 instance LiftProxy Int where
     liftProxy _ = [t| Int |]
@@ -65,63 +74,117 @@ instance LiftProxy Int where
 instance LiftProxy Double where
     liftProxy _ = [t| Double |]
 
+instance LiftProxy Bool where
+    liftProxy _ = [t| Bool |]
+
 instance LiftProxy Zero where
     liftProxy _ = [t| Zero |]
 
 instance LiftProxy n => LiftProxy (Succ n) where
-    liftProxy _ = [t| Succ $(liftProxy (Proxy :: Proxy n)) |]
+    liftProxy _ = [t| Succ $(liftProxy (proxy# :: Proxy# n)) |]
 
-createCallback :: forall n a. (ForEachKNodes n, LiftProxy a, LiftProxy n) => ParsedCallback Lift n a -> Q [Dec]
-createCallback ParsedCallback{..} = [d|
-    type instance THCallbackResult $(name) = $(liftProxy (Proxy :: Proxy a))
-    type instance THCallbackArity $(name) = $(liftProxy (Proxy :: Proxy n))
+type LiftsA = Both Lift LiftProxy
+type LiftsN = Both ForEachKNodes LiftProxy
 
-    instance Monoid (THCallback $(name)) where
-        mempty = 0
-        mappend = (+)
+createCallback :: forall n a. (ForEachKNodes n, LiftProxy a, LiftProxy n) => ParsedCallback LiftsA n a -> Q [Dec]
+createCallback ParsedCallback{..} =
+    case callbackResult of
+        CallbackSum expr -> [d|
+            type instance THCallbackResult $(name) = $(liftProxy (proxy# :: Proxy# a))
+            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
 
-    instance Monad m => Callback m 'Post (THCallback $(name)) where
-        runCallback repr = forEachKNodes repr run
-          where
-            run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
-            run args =  pure $ 
-                if $(unTypeQ $ ev callbackCondition) then
-                    THCallback $(unTypeQ $ ev expr)
-                else
-                    mempty
-    |]
+            instance Monoid (THCallback $(name)) where
+                mempty = 0
+                {-# INLINE mempty #-}
+                mappend = (+)
+                {-# INLINE mappend #-}
+
+            instance Monad m => Callback m 'Post (THCallback $(name)) where
+                runCallback repr = forEachKNodes repr run
+                  where
+                    run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
+                    run args =  pure $ 
+                        if $(unTypeQ $ ev callbackCondition) then
+                            THCallback $(unTypeQ $ ev expr)
+                        else
+                            mempty
+            |]
+        CallbackProduct expr -> [d|
+            type instance THCallbackResult $(name) = $(liftProxy (proxy# :: Proxy# a))
+            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
+
+            instance Monoid (THCallback $(name)) where
+                mempty = 0
+                {-# INLINE mempty #-}
+                mappend = (+)
+                {-# INLINE mappend #-}
+
+            instance Monad m => Callback m 'Post (THCallback $(name)) where
+                runCallback repr = forEachKNodes repr run
+                  where
+                    run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
+                    run args =  pure $ 
+                        if $(unTypeQ $ ev callbackCondition) then
+                            THCallback $(unTypeQ $ ev expr)
+                        else
+                            mempty
+            |]
+        CallbackList expr -> [d|
+            type instance THCallbackResult $(name) = [$(liftProxy (proxy# :: Proxy# a))]
+            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
+
+            instance Monoid (THCallback $(name)) where
+                mempty = []
+                {-# INLINE mempty #-}
+                mappend = (++)
+                {-# INLINE mappend #-}
+
+            instance Monad m => Callback m 'Post (THCallback $(name)) where
+                runCallback repr = forEachKNodes repr run
+                  where
+                    run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
+                    run args =  pure $ 
+                        if $(unTypeQ $ ev callbackCondition) then
+                            [THCallback $(unTypeQ $ ev expr)]
+                        else
+                            mempty
+            |]
   where
-    CallbackSum expr = callbackResult
     name = litT $ strTyLit callbackName
     ev x = eval EvalCtx
                     { args = unsafeTExpCoerce $ varE $ mkName "args"
                     , repr = mkName "repr"
                     } x
 
-quoteCallback :: forall proxy n. (ForEachKNodes n, ToNodeEx n, LiftProxy n) => proxy n -> String -> Q [Dec]
+quoteCallback :: MaxNConstraint LiftsA LiftsN maxn => Proxy# maxn -> String -> Q [Dec]
 quoteCallback p str =
-    case P.parse parseCallback "TH" str of
-        Right exp -> createCallback (exp :: ParsedCallback Lift n Double)
+    case P.parse (parseCallback p) "TH" str of
+        Right ((ParsedCallbackWrapper exp) :: ParsedCallbackWrapper LiftsA LiftsN) -> createCallback exp
         Left err -> fail $ show err
 
+-- |A callback quasiquoter
 callback = QuasiQuoter
-    { quoteDec = quoteCallback (Proxy :: Proxy (Succ (Succ Zero)))
+    { quoteDec = quoteCallback (proxy# :: Proxy# (Succ (Succ (Succ (Succ Zero)))))
     }
 
+-- |A fixed-width vector
 data Vec (n :: Nat) a where
     Nil :: Vec Zero a
     Cons :: a -> Vec n a -> Vec (Succ n) a
 
+-- |Evaluation context
 data EvalCtx n = EvalCtx
-    { args :: Q (TExp (Vec n Atom))
-    , repr :: Name
+    { args :: Q (TExp (Vec n Atom)) -- ^A typed expression representing the arguments vector
+    , repr :: Name -- ^The name of the binding of the representation
     }
 
+-- |Type-safe !! on 'Vec'tors.
 access :: Node n -> Vec n a -> a
 access FirstNode (Cons h _) = h
 access (NextNode n) (Cons _ t) = access n t
 
-eval :: EvalCtx n -> Expr Lift n a -> Q (TExp a)
+-- |A transformer of 'Expr' into typed expressions.
+eval :: EvalCtx n -> Expr LiftsA n a -> Q (TExp a)
 eval ctx (EAnd lhs rhs) =  [|| $$(eval ctx lhs) && $$(eval ctx rhs) ||]
 eval ctx (EOr lhs rhs) =   [|| $$(eval ctx lhs) || $$(eval ctx rhs) ||]
 eval ctx (ENot lhs) =      [|| not $$(eval ctx lhs) ||]
@@ -175,17 +238,22 @@ instance Lift (Node n) where
     lift FirstNode = [| FirstNode |]
     lift (NextNode n) = [| NextNode n |]
 
+-- |A helper class used to iterate over fixed-width vectors
+-- of nodes.
 class ForEachKNodes (n :: Nat) where
     forEachKNodes :: (Monoid r, ReadRepresentation m repr, Monad m)
         => repr -> (Vec n Atom -> m r) -> m r
 
 instance ForEachKNodes Zero where
     forEachKNodes _ fun = fun Nil
+    {-# INLINE forEachKNodes #-}
 
 instance ForEachKNodes n => ForEachKNodes (Succ n) where
     forEachKNodes repr fun = forEachKNodes repr $ \xs ->
         forEachNode repr $ \x -> fun $ Cons x xs
+    {-# INLINE forEachKNodes #-}
 
+-- |Performs a monadic action over all nodes (i.e. beads and atoms) and gathers the results.
 forEachNode :: forall m r repr. (Monoid r, ReadRepresentation m repr, Monad m) => repr -> (Atom -> m r) -> m r
 forEachNode repr f = do
     numChains <- getNumberOfChains repr
@@ -195,3 +263,4 @@ forEachNode repr f = do
   where
     go :: (MonoTraversable c, Element c ~ a) => (a -> Atom) -> c -> m r
     go conv = flip ofoldlM mempty $ \s x -> mappend s <$> f (conv x)
+{-# INLINE forEachNode #-}
