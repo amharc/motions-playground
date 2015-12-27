@@ -85,15 +85,18 @@ createCallback ParsedCallback{..} = [d|
           where
             run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
             run args =  pure $ 
-                if $(ev callbackCondition) then
-                    THCallback $(ev expr)
+                if $(unTypeQ $ ev callbackCondition) then
+                    THCallback $(unTypeQ $ ev expr)
                 else
                     mempty
     |]
   where
     CallbackSum expr = callbackResult
     name = litT $ strTyLit callbackName
-    ev x = eval EvalCtx { args = mkName "args", repr = mkName "repr" } x
+    ev x = eval EvalCtx
+                    { args = unsafeTExpCoerce $ varE $ mkName "args"
+                    , repr = mkName "repr"
+                    } x
 
 quoteCallback :: forall proxy n. (ForEachKNodes n, ToNodeEx n, LiftProxy n) => proxy n -> String -> Q [Dec]
 quoteCallback p str =
@@ -110,7 +113,7 @@ data Vec (n :: Nat) a where
     Cons :: a -> Vec n a -> Vec (Succ n) a
 
 data EvalCtx n = EvalCtx
-    { args :: Name --Vec n Atom
+    { args :: Q (TExp (Vec n Atom))
     , repr :: Name
     }
 
@@ -118,46 +121,46 @@ access :: Node n -> Vec n a -> a
 access FirstNode (Cons h _) = h
 access (NextNode n) (Cons _ t) = access n t
 
-eval :: EvalCtx n -> Expr Lift n a -> Q Exp
-eval ctx (EAnd lhs rhs) =  [| $(eval ctx lhs) && $(eval ctx rhs) |]
-eval ctx (EOr lhs rhs) =   [| $(eval ctx lhs) || $(eval ctx rhs) |]
-eval ctx (ENot lhs) =      [| not $(eval ctx lhs) |]
+eval :: EvalCtx n -> Expr Lift n a -> Q (TExp a)
+eval ctx (EAnd lhs rhs) =  [|| $$(eval ctx lhs) && $$(eval ctx rhs) ||]
+eval ctx (EOr lhs rhs) =   [|| $$(eval ctx lhs) || $$(eval ctx rhs) ||]
+eval ctx (ENot lhs) =      [|| not $$(eval ctx lhs) ||]
 
-eval ctx (ELt lhs rhs) =   [| $(eval ctx lhs) <  $(eval ctx rhs) |]
-eval ctx (ELte lhs rhs) =  [| $(eval ctx lhs) <= $(eval ctx rhs) |]
-eval ctx (EGt lhs rhs) =   [| $(eval ctx lhs) >  $(eval ctx rhs) |]
-eval ctx (EGte lhs rhs) =  [| $(eval ctx lhs) >= $(eval ctx rhs) |]
-eval ctx (EEq lhs rhs) =   [| $(eval ctx lhs) == $(eval ctx rhs) |]
-eval ctx (ENeq lhs rhs) =  [| $(eval ctx lhs) /= $(eval ctx rhs) |]
+eval ctx (ELt lhs rhs) =   [|| $$(eval ctx lhs) <  $$(eval ctx rhs) ||]
+eval ctx (ELte lhs rhs) =  [|| $$(eval ctx lhs) <= $$(eval ctx rhs) ||]
+eval ctx (EGt lhs rhs) =   [|| $$(eval ctx lhs) >  $$(eval ctx rhs) ||]
+eval ctx (EGte lhs rhs) =  [|| $$(eval ctx lhs) >= $$(eval ctx rhs) ||]
+eval ctx (EEq lhs rhs) =   [|| $$(eval ctx lhs) == $$(eval ctx rhs) ||]
+eval ctx (ENeq lhs rhs) =  [|| $$(eval ctx lhs) /= $$(eval ctx rhs) ||]
 
-eval ctx (EInt lhs) =      [| floor $(eval ctx lhs) |]
-eval ctx (EFlt lhs) =      [| fromIntegral $(eval ctx lhs) |]
+eval ctx (EInt lhs) =      [|| floor $$(eval ctx lhs) ||]
+eval ctx (EFlt lhs) =      [|| fromIntegral $$(eval ctx lhs) ||]
 
-eval ctx (EAdd lhs rhs) =  [| $(eval ctx lhs) + $(eval ctx rhs) |]
-eval ctx (ESub lhs rhs) =  [| $(eval ctx lhs) - $(eval ctx rhs) |]
-eval ctx (EMul lhs rhs) =  [| $(eval ctx lhs) * $(eval ctx rhs) |]
-eval ctx (EDiv lhs rhs) =  [| $(eval ctx lhs) / $(eval ctx rhs) |]
-eval ctx (EIDiv lhs rhs) = [| $(eval ctx lhs) `div` $(eval ctx rhs) |]
-eval ctx (EMod lhs rhs) =  [| $(eval ctx lhs) `mod` $(eval ctx rhs) |]
+eval ctx (EAdd lhs rhs) =  [|| $$(eval ctx lhs) + $$(eval ctx rhs) ||]
+eval ctx (ESub lhs rhs) =  [|| $$(eval ctx lhs) - $$(eval ctx rhs) ||]
+eval ctx (EMul lhs rhs) =  [|| $$(eval ctx lhs) * $$(eval ctx rhs) ||]
+eval ctx (EDiv lhs rhs) =  [|| $$(eval ctx lhs) / $$(eval ctx rhs) ||]
+eval ctx (EIDiv lhs rhs) = [|| $$(eval ctx lhs) `div` $$(eval ctx rhs) ||]
+eval ctx (EMod lhs rhs) =  [|| $$(eval ctx lhs) `mod` $$(eval ctx rhs) ||]
 
-eval ctx (EMin lhs rhs) =  [| $(eval ctx lhs) `min` $(eval ctx rhs) |]
-eval ctx (EMax lhs rhs) =  [| $(eval ctx lhs) `max` $(eval ctx rhs) |]
+eval ctx (EMin lhs rhs) =  [|| $$(eval ctx lhs) `min` $$(eval ctx rhs) ||]
+eval ctx (EMax lhs rhs) =  [|| $$(eval ctx lhs) `max` $$(eval ctx rhs) ||]
 
-eval EvalCtx{..} (EBelongs node cls) = [|
-    case (cls, access node $(varE args)) of
+eval EvalCtx{..} (EBelongs node cls) = [||
+    case (cls, access node $$(args)) of
         (BeadClass x, Bead BeadInfo{..}) -> x == getBeadType beadType
         (BinderClass x, Binder BinderInfo{..}) -> x == getBinderType binderType
         _ -> False
-    |]
+    ||]
 
 
-eval EvalCtx{..} (EDist lhs rhs) = [|
+eval EvalCtx{..} (EDist lhs rhs) = [||
     sqrt $ fromIntegral $ qd
-        (getPosition $ access lhs $(varE args))
-        (getPosition $ access rhs $(varE args))
-    |]
+        (getPosition $ access lhs $$(args))
+        (getPosition $ access rhs $$(args))
+    ||]
 
-eval _ (ELit lit) = [| lit |]
+eval _ (ELit lit) = [|| lit ||]
 
 eval ctx EGr = undefined -- TODO
 eval EvalCtx{..} (EAtomIx node) = undefined -- TODO
