@@ -21,9 +21,16 @@ import Data.Proxy
 
 [callback|CALLBACK "test"
     EVERY 1
-    NODES 2
-    WHERE 1 == 2
-    COMPUTE SUM 42
+    NODES 0
+    WHERE 1 == 1
+    COMPUTE LIST 42
+|]
+
+[callback|CALLBACK "prod"
+    EVERY 1
+    NODES 1
+    WHERE 1 == 1
+    COMPUTE PRODUCT INT(DIST(X 0, X 0))
 |]
 
 

@@ -114,9 +114,9 @@ createCallback ParsedCallback{..} =
             type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
 
             instance Monoid (THCallback $(name)) where
-                mempty = 0
+                mempty = 1
                 {-# INLINE mempty #-}
-                mappend = (+)
+                mappend = (*)
                 {-# INLINE mappend #-}
 
             instance Monad m => Callback m 'Post (THCallback $(name)) where
@@ -134,9 +134,9 @@ createCallback ParsedCallback{..} =
             type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
 
             instance Monoid (THCallback $(name)) where
-                mempty = []
+                mempty = THCallback []
                 {-# INLINE mempty #-}
-                mappend = (++)
+                (THCallback x) `mappend` (THCallback y) = THCallback $ x ++ y
                 {-# INLINE mappend #-}
 
             instance Monad m => Callback m 'Post (THCallback $(name)) where
@@ -145,7 +145,7 @@ createCallback ParsedCallback{..} =
                     run :: Vec (THCallbackArity $(name)) Atom -> m (THCallback $(name))
                     run args =  pure $ 
                         if $(unTypeQ $ ev callbackCondition) then
-                            [THCallback $(unTypeQ $ ev expr)]
+                            THCallback [$(unTypeQ $ ev expr)]
                         else
                             mempty
             |]
