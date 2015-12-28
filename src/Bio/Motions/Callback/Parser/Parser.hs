@@ -190,7 +190,7 @@ instance EC c n a => ECc c a n
 -- |A convenient wrapper. See 'parseCallback'.
 type MaxNConstraint c cn maxn = (EC c maxn '[Int, Double, Bool], TryNatsBelow (Both (ECc c '[Int, Double, Bool]) cn) maxn)
 
--- |Pullback of two morphisms of type @k -> 'Constraint'@
+-- |@Both c1 c2 a@ iff @(c1 a, c2 a)@.
 class (c1 a, c2 a) => Both c1 c2 a
 instance (c1 a, c2 a) => Both c1 c2 a
 
