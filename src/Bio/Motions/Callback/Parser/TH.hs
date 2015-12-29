@@ -21,6 +21,8 @@ Portability : unportable
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 module Bio.Motions.Callback.Parser.TH where
 
 import Language.Haskell.TH
@@ -32,6 +34,7 @@ import Bio.Motions.Callback.Parser.Parser
 import Bio.Motions.Representation.Class
 import Bio.Motions.Types
 import Control.Monad.State.Strict
+import Data.Constraint
 import Data.Foldable
 import Data.Traversable
 import Data.MonoTraversable
@@ -39,20 +42,20 @@ import Data.Monoid
 import Linear
 import qualified Text.Parsec as P
 import Data.Proxy
-import qualified GHC.TypeLits as TL
+import GHC.TypeLits
 import GHC.Prim
 
 -- |Represents the return value type of a callback.
-type family THCallbackResult (name :: TL.Symbol) :: *
+type family THCallbackResult (name :: Symbol) :: *
 
 -- |Represents the callback arity, i.e. the number of
 -- node arguments.
-type family THCallbackArity (name :: TL.Symbol) :: Nat
+type family THCallbackArity (name :: Symbol) :: Nat
 
 type role THCallback nominal
 -- |A wrapper around the callback return type, which will be provided an instance
 -- of 'Callback'.
-newtype THCallback (name :: TL.Symbol) = THCallback { getTHCallback :: THCallbackResult name }
+newtype THCallback (name :: Symbol) = THCallback { getTHCallback :: THCallbackResult name }
 
 deriving instance Eq (THCallbackResult name) => Eq (THCallback name)
 deriving instance Ord (THCallbackResult name) => Ord (THCallback name)
@@ -74,11 +77,11 @@ instance LiftProxy Double where
 instance LiftProxy Bool where
     liftProxy _ = [t| Bool |]
 
-instance LiftProxy Zero where
-    liftProxy _ = [t| Zero |]
+instance LiftProxy 0 where
+    liftProxy _ = [t| 0 |]
 
-instance LiftProxy n => LiftProxy (Succ n) where
-    liftProxy _ = [t| Succ $(liftProxy (proxy# :: Proxy# n)) |]
+instance {-# OVERLAPPABLE #-} (n ~ (n0 + 1), LiftProxy n0) => LiftProxy n where
+    liftProxy _ = [t| 1 + $(liftProxy (proxy# :: Proxy# n0)) |]
 
 -- |Convenient alias.
 type LiftsA = Both Lift LiftProxy
@@ -168,24 +171,19 @@ quoteCallback p str =
 
 -- |A callback quasiquoter
 callback = QuasiQuoter
-    { quoteDec = quoteCallback (proxy# :: Proxy# (ToNat 10))
+    { quoteDec = quoteCallback (proxy# :: Proxy# 10)
     }
 
 -- |A fixed-width vector
 data Vec (n :: Nat) a where
-    Nil :: Vec Zero a
-    Cons :: a -> Vec n a -> Vec (Succ n) a
+    Nil :: Vec 0 a
+    Cons :: a -> Vec n a -> Vec (n + 1) a
 
 -- |Evaluation context
 data EvalCtx n = EvalCtx
     { args :: Q (TExp (Vec n Atom)) -- ^A typed expression representing the arguments vector
     , repr :: Name -- ^The name of the binding of the representation
     }
-
--- |Convert 'TL.Nat' to 'Nat'.
-type family ToNat (n :: TL.Nat) :: Nat where
-    ToNat 0 = Zero
-    ToNat n = Succ (ToNat (n TL.- 1))
 
 -- |Type-safe !! on 'Vec'tors.
 access :: Node n -> Vec n a -> a
@@ -255,12 +253,12 @@ class ForEachKNodes (n :: Nat) where
         => repr -> (Vec n Atom -> m r) -> m r
 
 -- |The base case.
-instance ForEachKNodes Zero where
+instance ForEachKNodes 0 where
     forEachKNodes _ fun = fun Nil
     {-# INLINE forEachKNodes #-}
 
 -- |The recursive case.
-instance ForEachKNodes n => ForEachKNodes (Succ n) where
+instance {-# OVERLAPPABLE #-} (ForEachKNodes n0, n ~ (n0 + 1)) => ForEachKNodes n where
     forEachKNodes repr fun = forEachKNodes repr $ \xs ->
         forEachNode repr $ \x -> fun $ Cons x xs
     {-# INLINE forEachKNodes #-}

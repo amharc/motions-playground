@@ -39,6 +39,7 @@ import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)
 import GHC.Prim
+import GHC.TypeLits
 
 -- |Represents the frequency a callback has to be run
 data CallbackFrequency = EveryNFrames Int | EveryNAcceptedFrames Int
@@ -60,16 +61,10 @@ data ParsedCallback c n a = ParsedCallback
     , callbackResult :: CallbackResult c n a
     }
 
--- |Natural numbers
-data Nat where
-    Zero :: Nat
-    Succ :: Nat -> Nat
-    deriving (Eq, Show)
-
 -- |A wrapper around node argument identifiers.
 data Node (n :: Nat) where
-    FirstNode :: Node (Succ n)
-    NextNode :: Node n -> Node (Succ n)
+    FirstNode :: Node (n + 1)
+    NextNode :: Node n -> Node (n + 1)
 
 -- |Convert runtime natural 'Int's to type-level 'Nat's.
 class ToNodeEx (n :: Nat) where
@@ -78,18 +73,18 @@ class ToNodeEx (n :: Nat) where
     toNodeEx :: Int -> Node n
 
 -- |No non-negative 'Int' is smaller than 'Zero'
-instance ToNodeEx Zero where
+instance ToNodeEx 0 where
     toNodeEx _ = error "Out of bounds"
 
 -- |The recursive case.
-instance ToNodeEx n => ToNodeEx (Succ n) where
+instance {-# OVERLAPPABLE #-} (n ~ (n0 + 1), ToNodeEx n0) => ToNodeEx n where
     toNodeEx 0 = FirstNode
     toNodeEx n = NextNode $ toNodeEx $ n - 1
 
 -- |A useful constraint. 'EC' 'c' 'n' '[a_0, a_1, ...] means:
 -- 'ToNodeEx' 'n' and all of 'c' a_0, 'c' a_1, ...
 type family EC (c :: * -> Constraint) (n :: Nat) (a :: [*]) :: Constraint
-type instance EC c n '[] = (ToNodeEx n)
+type instance EC c n '[] = (ToNodeEx n, KnownNat n)
 type instance EC c n (t ': ts) = (c t, EC c n ts)
 
 -- |The AST of the callback DSL.
@@ -162,8 +157,8 @@ class TryNatsBelow c (limit :: Nat) where
         -- ^Its return value
 
 -- |The implementation.
-instance TryNatsBelow' c limit 'Zero => TryNatsBelow c limit where
-    tryNatsBelow = tryNatsBelow' (proxy# :: Proxy# Zero)
+instance TryNatsBelow' c limit 0 => TryNatsBelow c limit where
+    tryNatsBelow = tryNatsBelow' (proxy# :: Proxy# 0)
 
 -- |See 'TryNatsBelow'. It represents a partial conversion, i.e.
 -- @n + 'acc' == result@, where n is the provided 'Int' and result is the
@@ -173,15 +168,14 @@ class TryNatsBelow' c (limit :: Nat) (acc :: Nat) where
                     Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
 
 -- |@n < 'Zero'@ -- absurd.
-instance TryNatsBelow' c Zero acc where
+instance TryNatsBelow' c 0 acc where
     tryNatsBelow' _ _ _ _ _ = error "Out of bounds"
 
 -- | @(n + 1) + 'acc' == n + ('Succ' 'acc')@ and @(n + 1) < ('Succ' 'limit')@ iff @n < 'limit'@.
-instance (c acc, TryNatsBelow' c limit (Succ acc)) => TryNatsBelow' c (Succ limit) acc where
+instance {-# OVERLAPPABLE #-} (limit1 ~ (limit + 1), c acc, TryNatsBelow' c limit (acc + 1)) => TryNatsBelow' c limit1 acc where
     tryNatsBelow' _ _ pC 0 run = run (proxy# :: Proxy# acc)
-    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (Succ acc))
+    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (acc + 1))
                                                (proxy# :: Proxy# limit) pC (n - 1) run
-
 
 -- |'EC' with its arguments flipped.
 class EC c n a => ECc c a n
