@@ -77,26 +77,17 @@ instance LiftProxy Double where
 instance LiftProxy Bool where
     liftProxy _ = [t| Bool |]
 
-instance LiftProxy 0 where
-    liftProxy _ = [t| 0 |]
-
-instance {-# OVERLAPPABLE #-} (n ~ (n0 + 1), LiftProxy n0) => LiftProxy n where
-    liftProxy _ = [t| 1 + $(liftProxy (proxy# :: Proxy# n0)) |]
-
 -- |Convenient alias.
 type LiftsA = Both Lift LiftProxy
 
--- |Convenient alias.
-type LiftsN = Both ForEachKNodes LiftProxy
-
 -- |Creates Template Haskell declarations from a suitable 'ParsedCallback'.
-createCallback :: forall n a. (ForEachKNodes n, LiftProxy a, LiftProxy n) 
+createCallback :: forall n a. (ForEachKNodes n, KnownNat n, LiftProxy a)
     => ParsedCallback LiftsA n a -> Q [Dec]
 createCallback ParsedCallback{..} =
     case callbackResult of
         CallbackSum expr -> [d|
             type instance THCallbackResult $(name) = $(liftProxy (proxy# :: Proxy# a))
-            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
+            type instance THCallbackArity $(name) = $(arity)
 
             instance Monoid (THCallback $(name)) where
                 mempty = 0
@@ -116,7 +107,7 @@ createCallback ParsedCallback{..} =
             |]
         CallbackProduct expr -> [d|
             type instance THCallbackResult $(name) = $(liftProxy (proxy# :: Proxy# a))
-            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
+            type instance THCallbackArity $(name) = $(arity)
 
             instance Monoid (THCallback $(name)) where
                 mempty = 1
@@ -136,7 +127,7 @@ createCallback ParsedCallback{..} =
             |]
         CallbackList expr -> [d|
             type instance THCallbackResult $(name) = [$(liftProxy (proxy# :: Proxy# a))]
-            type instance THCallbackArity $(name) = $(liftProxy (proxy# :: Proxy# n))
+            type instance THCallbackArity $(name) = $(arity)
 
             instance Monoid (THCallback $(name)) where
                 mempty = THCallback []
@@ -156,16 +147,17 @@ createCallback ParsedCallback{..} =
             |]
   where
     name = litT $ strTyLit callbackName
+    arity = litT $ numTyLit $ natVal' (proxy# :: Proxy# n)
     ev x = eval EvalCtx
                     { args = unsafeTExpCoerce $ varE $ mkName "args"
                     , repr = mkName "repr"
                     } x
 
 -- |A callback quasiquoter, accepting any suitable callback with arity strictly less than 'maxb'.
-quoteCallback :: MaxNConstraint LiftsA LiftsN maxn => Proxy# maxn -> String -> Q [Dec]
+quoteCallback :: MaxNConstraint LiftsA ForEachKNodes maxn => Proxy# maxn -> String -> Q [Dec]
 quoteCallback p str =
     case P.parse (parseCallback p) "TH" str of
-        Right ((ParsedCallbackWrapper exp) :: ParsedCallbackWrapper LiftsA LiftsN) ->
+        Right ((ParsedCallbackWrapper exp) :: ParsedCallbackWrapper LiftsA ForEachKNodes) ->
             createCallback exp
         Left err -> fail $ show err
 
