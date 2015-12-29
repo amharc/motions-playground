@@ -151,31 +151,33 @@ class TryNatsBelow c (limit :: Nat) where
     tryNatsBelow :: Proxy# limit  -> Proxy# c 
         -> Int
         -- ^A runtime representation of the
-        -> (forall (m :: Nat). c m => Proxy# m -> x)
+        -> (forall (m :: Nat). (c m, (m + 1) <= limit) => Proxy# m -> x)
         -- ^The function to be called
         -> x
         -- ^Its return value
 
 -- |The implementation.
-instance TryNatsBelow' c limit 0 => TryNatsBelow c limit where
-    tryNatsBelow = tryNatsBelow' (proxy# :: Proxy# 0)
+instance TryNatsBelow' c limit limit 0 => TryNatsBelow c limit where
+    tryNatsBelow lim = tryNatsBelow' (proxy# :: Proxy# 0) lim lim
 
 -- |See 'TryNatsBelow'. It represents a partial conversion, i.e.
 -- @n + 'acc' == result@, where n is the provided 'Int' and result is the
 -- target 'Nat', where @n < 'limit'@.
-class TryNatsBelow' c (limit :: Nat) (acc :: Nat) where
-    tryNatsBelow' :: Proxy# acc -> Proxy# limit -> Proxy# c ->
-                    Int -> (forall (m :: Nat). c m => Proxy# m -> x) -> x
+class (acc <= olimit) => TryNatsBelow' c (limit :: Nat) (olimit :: Nat) (acc :: Nat) where
+    tryNatsBelow' :: Proxy# acc -> Proxy# limit -> Proxy# olimit -> Proxy# c ->
+                    Int -> (forall (m :: Nat). (c m, (m + 1) <= olimit) => Proxy# m -> x) -> x
 
 -- |@n < 'Zero'@ -- absurd.
-instance TryNatsBelow' c 0 acc where
+instance (acc <= olimit) => TryNatsBelow' c 0 olimit acc where
     tryNatsBelow' _ _ _ _ _ = error "Out of bounds"
 
 -- | @(n + 1) + 'acc' == n + ('Succ' 'acc')@ and @(n + 1) < ('Succ' 'limit')@ iff @n < 'limit'@.
-instance {-# OVERLAPPABLE #-} (limit1 ~ (limit + 1), c acc, TryNatsBelow' c limit (acc + 1)) => TryNatsBelow' c limit1 acc where
-    tryNatsBelow' _ _ pC 0 run = run (proxy# :: Proxy# acc)
-    tryNatsBelow' _ _ pC n run = tryNatsBelow' (proxy# :: Proxy# (acc + 1))
-                                               (proxy# :: Proxy# limit) pC (n - 1) run
+instance {-# OVERLAPPABLE #-} (limit1 ~ (limit + 1), c acc,
+    TryNatsBelow' c limit olimit (acc + 1), acc <= olimit)
+    => TryNatsBelow' c limit1 olimit acc where
+    tryNatsBelow' _ _ _   pC 0 run = run (proxy# :: Proxy# acc)
+    tryNatsBelow' _ _ pOL pC n run = tryNatsBelow' (proxy# :: Proxy# (acc + 1))
+                                               (proxy# :: Proxy# limit) pOL pC (n - 1) run
 
 -- |'EC' with its arguments flipped.
 class EC c n a => ECc c a n
