@@ -148,7 +148,7 @@ class TryNatsBelow c (limit :: Nat) where
     -- Because Dependent Haskell isn't a thing yet, this function
     -- requires that this integer is less than a specified 'limit' :: 'Nat'
     -- and fails otherwise.
-    tryNatsBelow :: Proxy# limit  -> Proxy# c 
+    tryNatsBelow :: Proxy# '(limit, c)
         -> Int
         -- ^A runtime representation of the
         -> (forall (m :: Nat). (c m, (m + 1) <= limit) => Proxy# m -> x)
@@ -158,26 +158,27 @@ class TryNatsBelow c (limit :: Nat) where
 
 -- |The implementation.
 instance TryNatsBelow' c limit limit 0 => TryNatsBelow c limit where
-    tryNatsBelow lim = tryNatsBelow' (proxy# :: Proxy# 0) lim lim
+    tryNatsBelow _ = tryNatsBelow' (proxy# :: Proxy# '(0, limit, limit, c))
 
 -- |See 'TryNatsBelow'. It represents a partial conversion, i.e.
 -- @n + 'acc' == result@, where n is the provided 'Int' and result is the
 -- target 'Nat', where @n < 'limit'@.
 class (acc <= olimit) => TryNatsBelow' c (limit :: Nat) (olimit :: Nat) (acc :: Nat) where
-    tryNatsBelow' :: Proxy# acc -> Proxy# limit -> Proxy# olimit -> Proxy# c ->
-                    Int -> (forall (m :: Nat). (c m, (m + 1) <= olimit) => Proxy# m -> x) -> x
+    tryNatsBelow' ::    Proxy# '(acc, limit, olimit, c)
+                     -> Int
+                     -> (forall (m :: Nat). (c m, (m + 1) <= olimit) => Proxy# m -> x)
+                     -> x
 
 -- |@n < 'Zero'@ -- absurd.
 instance (acc <= olimit) => TryNatsBelow' c 0 olimit acc where
-    tryNatsBelow' _ _ _ _ _ = error "Out of bounds"
+    tryNatsBelow' _ _ _ = error "Out of bounds"
 
 -- | @(n + 1) + 'acc' == n + ('Succ' 'acc')@ and @(n + 1) < ('Succ' 'limit')@ iff @n < 'limit'@.
 instance {-# OVERLAPPABLE #-} (limit1 ~ (limit + 1), c acc,
     TryNatsBelow' c limit olimit (acc + 1), acc <= olimit)
     => TryNatsBelow' c limit1 olimit acc where
-    tryNatsBelow' _ _ _   pC 0 run = run (proxy# :: Proxy# acc)
-    tryNatsBelow' _ _ pOL pC n run = tryNatsBelow' (proxy# :: Proxy# (acc + 1))
-                                               (proxy# :: Proxy# limit) pOL pC (n - 1) run
+    tryNatsBelow' _ 0 run = run (proxy# :: Proxy# acc)
+    tryNatsBelow' _ n run = tryNatsBelow' (proxy# :: Proxy# '(acc + 1, limit, olimit, c)) (n - 1) run
 
 -- |'EC' with its arguments flipped.
 class EC c n a => ECc c a n
@@ -196,7 +197,7 @@ instance (c1 a, c2 a) => Both c1 c2 a
 -- 'Zero' (incl.) and 'maxn' (excl.) satsify the constraint 'cn'.
 parseCallback :: forall c cn maxn. MaxNConstraint c cn maxn
     => Proxy# maxn -> Parser (ParsedCallbackWrapper c cn)
-parseCallback pMaxN = do
+parseCallback _ = do
     reserved "CALLBACK"
     name <- stringLiteral
 
@@ -206,7 +207,7 @@ parseCallback pMaxN = do
 
     reserved "NODES"
     arity <- fromIntegral <$> natural
-    tryNatsBelow pMaxN (proxy# :: Proxy# (Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
+    tryNatsBelow (proxy# :: Proxy# '(maxn, Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
   where
     rem :: forall n. (EC c n '[Int, Double, Bool], cn n) => String -> CallbackFrequency -> Proxy# n -> Parser (ParsedCallbackWrapper c cn)
     rem name freq _ = do
@@ -299,8 +300,7 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
 
     atom =   (reserved "NOT" >> ENot <$> atom)
          <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
-         <|> polyParse (proxy# :: Proxy# c) (proxy# :: Proxy# Ord)
-                       (proxy# :: Proxy# n) (proxy# :: Proxy# '[Int, Double])  (\sub -> do
+         <|> polyParse (proxy# :: Proxy# '(c, Ord, n, '[Int, Double])) (\sub -> do
                 lhs <- sub
                 op <-  choice
                        [ reservedOp "==" >> pure EEq
@@ -349,14 +349,7 @@ instance ParseConstant AtomClass where
 class PolyParse c c' n xs where
     -- |The parsing function
     polyParse ::
-           Proxy# c
-           -- ^A proxy with the constraint
-        -> Proxy# c'
-           -- ^A proxy with the constraint
-        -> Proxy# n
-           -- ^A proxy with the arity
-        -> Proxy# xs
-           -- ^A proxy with the types list
+           Proxy# '(c, c', n, xs)
         -> (forall x. (c' x, c x) => Parser (Expr c n x) -> Parser a)
            -- ^The parsng function
         -> Parser a
@@ -365,12 +358,12 @@ class PolyParse c c' n xs where
 
 -- |The base case.
 instance PolyParse c c' n '[] where
-    polyParse _ _ _ _ _ = fail "PolyParse: no candidate suceeded"
+    polyParse _ _ = fail "PolyParse: no candidate suceeded"
 
 -- |The recursive case.
 instance (Parseable c n x, PolyParse c c' n xs, c' x) => PolyParse c c' n (x ': xs) where
-    polyParse pC pC' pN _ run = try (run (expr :: Parser (Expr c n x)))
-                       <|> polyParse pC pC' pN (proxy# :: Proxy# xs) run
+    polyParse _ run = try (run (expr :: Parser (Expr c n x)))
+                       <|> polyParse (proxy# :: Proxy# '(c, c', n, xs)) run
 
 -- |The language definition.
 dslDef :: P.LanguageDef st
