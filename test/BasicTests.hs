@@ -71,6 +71,20 @@ dump = D.Dump
     COMPUTE LIST 42
 |]
 
+[callback|CALLBACK "prod-binders-beads"
+    EVERY 1
+    NODES 2
+    WHERE (BELONGS(X 0, BINDER 0) OR BELONGS(X 0, BINDER 1)) AND (BELONGS(X 1, BEAD 0) OR BELONGS(X 1, BEAD 1))
+    COMPUTE SUM 1
+|]
+
+[callback|CALLBACK "list-11"
+    EVERY 1
+    NODES 2
+    WHERE BELONGS(X 0, BINDER 1) AND BELONGS(X 1, BEAD 1)
+    COMPUTE LIST DIST(X 0, X 1)
+|]
+
 testRepr :: SpecWith ()
 testRepr = do
     repr :: PureChainRepresentation <- loadDump dump
@@ -115,6 +129,14 @@ testRepr = do
             score :: StandardScore <- runCallback repr
             score `shouldBe` 1002
 
+        it "should have the correct score after a bead move" $ do
+            score :: StandardScore <- updateCallback repr 1002 $ Move (V3 5 6 6) (V3 0 0 (-1))
+            score `shouldBe` 2002
+
+        it "should have the correct score after a binder move" $ do
+            score :: StandardScore <- updateCallback repr 1002 $ Move (V3 0 1 2) (V3 0 0 1)
+            score `shouldBe` 1000
+
         context "template haskell callbacks" $ do
             it "should have the correct sum42-beads" $ do
                 res :: THCallback "sum42-beads" <- runCallback repr
@@ -127,6 +149,14 @@ testRepr = do
             it "should have the correct list42-binders" $ do
                 res :: THCallback "list42-binders" <- runCallback repr
                 res `shouldBe` THCallback (replicate binders 42)
+
+            it "should have the correct prod-binders-beads" $ do
+                res :: THCallback "prod-binders-beads" <- runCallback repr
+                res `shouldBe` THCallback (binders * beads)
+
+            it "should have the correct list-11" $ do
+                res :: THCallback "list-11" <- runCallback repr
+                res `shouldBe` THCallback [sqrt 2, 1]
   where
     beads = sum $ map length $ D.chains dump
     binders = length $ D.binders dump
