@@ -18,11 +18,8 @@ module Bio.Motions.Callback.StandardScore(StandardScore) where
 import Bio.Motions.Types
 import Bio.Motions.Callback.Class
 import Bio.Motions.Representation.Class
-import Control.Applicative
 import Data.List
 import Data.MonoTraversable
-import Data.Monoid
-import Data.Traversable
 import Data.Foldable
 import Linear
 

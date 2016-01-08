@@ -60,6 +60,8 @@ deriving instance Num (THCallbackResult name) => Num (THCallback name)
 deriving instance Enum (THCallbackResult name) => Enum (THCallback name)
 deriving instance Real (THCallbackResult name) => Real (THCallback name)
 deriving instance Integral (THCallbackResult name) => Integral (THCallback name)
+deriving instance Show (THCallbackResult name) => Show (THCallback name)
+deriving instance Read (THCallbackResult name) => Read (THCallback name)
 
 -- |An auxiliary class used for lifting types into type expressions.
 class LiftProxy a where
@@ -154,8 +156,8 @@ createCallback ParsedCallback{..} =
   where
     name = litT $ strTyLit callbackName
     ev x = eval EvalCtx
-                    { args = unsafeTExpCoerce $ varE $ mkName "args"
-                    , repr = mkName "repr"
+                    { evalCtxArgs = unsafeTExpCoerce $ varE $ mkName "args"
+                    , evalCtxRepr = mkName "repr"
                     } x
 
 -- |A callback quasiquoter, accepting any suitable callback with arity strictly less than 'maxb'.
@@ -178,8 +180,8 @@ data Vec (n :: Nat) a where
 
 -- |Evaluation context
 data EvalCtx n = EvalCtx
-    { args :: Q (TExp (Vec n Atom)) -- ^A typed expression representing the arguments vector
-    , repr :: Name -- ^The name of the binding of the representation
+    { evalCtxArgs :: Q (TExp (Vec n Atom)) -- ^A typed expression representing the arguments vector
+    , evalCtxRepr :: Name -- ^The name of the binding of the representation
     }
 
 -- |Convert 'TL.Nat' to 'Nat'.
@@ -220,7 +222,7 @@ eval ctx (EMin lhs rhs) =  [|| $$(eval ctx lhs) `min` $$(eval ctx rhs) ||]
 eval ctx (EMax lhs rhs) =  [|| $$(eval ctx lhs) `max` $$(eval ctx rhs) ||]
 
 eval EvalCtx{..} (EBelongs node cls) = [||
-    case (cls, access node $$(args)) of
+    case (cls, access node $$(evalCtxArgs)) of
         (BeadClass x, Bead BeadInfo{..}) -> x == getBeadType beadType
         (BinderClass x, Binder BinderInfo{..}) -> x == getBinderType binderType
         _ -> False
@@ -229,16 +231,28 @@ eval EvalCtx{..} (EBelongs node cls) = [||
 
 eval EvalCtx{..} (EDist lhs rhs) = [||
     sqrt $ fromIntegral $ qd
-        (getPosition $ access lhs $$(args))
-        (getPosition $ access rhs $$(args))
+        (getPosition $ access lhs $$(evalCtxArgs))
+        (getPosition $ access rhs $$(evalCtxArgs))
     ||]
 
 eval _ (ELit lit) = [|| lit ||]
 
 eval ctx EGr = undefined -- TODO
-eval EvalCtx{..} (EAtomIx node) = undefined -- TODO
-eval EvalCtx{..} (EChainIx node) = undefined -- TODO
-eval EvalCtx{..} (EChromoIx node) = undefined -- TODO
+eval EvalCtx{..} (EAtomIx node) = [||
+    case access node $$(evalCtxArgs) of
+        Bead BeadInfo{..} -> beadAtomIndex
+        _ -> -1
+    ||]
+eval EvalCtx{..} (EChainIx node) = [||
+    case access node $$(evalCtxArgs) of
+        Bead BeadInfo{..} -> beadChain
+        _ -> -1
+    ||]
+eval EvalCtx{..} (EChromoIx node) = [||
+    case access node $$(evalCtxArgs) of
+        Bead BeadInfo{..} -> beadIndexOnChain
+        _ -> -1
+    ||]
 
 instance Lift AtomClass where
     lift (BeadClass cls)   = [| BeadClass cls |]

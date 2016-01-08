@@ -27,14 +27,13 @@ module Bio.Motions.Callback.Parser.Parser
     , ParsedCallbackWrapper(..)
     , MaxNConstraint
     , Both
-    , Expr(..)
     , Nat(..)
+    , Expr(..)
     , Node(..)
-    , EC(..)
+    , EC
     , ToNodeEx(..)
     , parseCallback) where
 
-import Bio.Motions.Callback.Class
 import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)

@@ -19,12 +19,15 @@ type Energy = Int
 
 -- |Represents the binding energy of a bead when connected to a binder of some type
 newtype EnergyVector = EnergyVector { getEnergyVector :: U.Vector Int }
+    deriving (Eq, Show)
 
 -- |Represents a binder type
 newtype BinderType = BinderType { getBinderType :: Int }
+    deriving (Eq, Show)
 
 -- |Represents a binder type
 newtype BeadType = BeadType { getBeadType :: Int }
+    deriving (Eq, Show)
 
 -- |A 3D vector of Ints
 type Vec3 = V3 Int
@@ -34,22 +37,29 @@ data BinderInfo = BinderInfo
     { binderPosition :: !Vec3   -- ^ The position of the binder
     , binderType :: !BinderType -- ^ The type of the binder
     }
+    deriving (Eq, Show)
 
 -- |Represents the information about a particular bead
 data BeadInfo = BeadInfo
     { beadPosition :: !Vec3 -- ^ The position of the bead
     , beadType :: !BeadType -- ^ The type of the bead
     , beadEV :: !EnergyVector -- ^ The energy vector of the binder
+    , beadAtomIndex :: !Int -- ^ The global index of this bead
+    , beadChain :: !Int -- ^ The index of the chain this bead belongs to
+    , beadIndexOnChain :: !Int -- ^ The index on the chain
     }
+    deriving (Eq, Show)
 
 -- |Represents a move of an atom
 data Move = Move
     { moveFrom :: !Vec3 -- ^ The previous position of the atom
     , moveDiff :: !Vec3 -- ^ The displacement
     }
+    deriving (Eq, Show)
 
 -- |Represents an arbitrary atom
 data Atom = Bead BeadInfo | Binder BinderInfo
+    deriving (Eq, Show)
 
 -- |Represents the energy between two objects, e.g. atoms
 class HaveEnergyBetween x y where
