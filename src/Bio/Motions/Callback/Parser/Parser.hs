@@ -31,9 +31,10 @@ module Bio.Motions.Callback.Parser.Parser
     , Expr(..)
     , Node(..)
     , EC
-    , ToNodeEx(..)
+    , ToNode(..)
     , parseCallback) where
 
+import Data.Maybe
 import Text.Parsec
 import qualified Text.Parsec.Token as P
 import Text.Parsec.Language (javaStyle)
@@ -71,24 +72,24 @@ data Node (n :: Nat) where
     NextNode :: Node n -> Node (Succ n)
 
 -- |Convert runtime natural 'Int's to type-level 'Nat's.
-class ToNodeEx (n :: Nat) where
+class ToNode (n :: Nat) where
     -- |Converts an non-negative 'Int' to a 'Node' if it is strictly less than 'n'.
     -- Fails otherwise.
-    toNodeEx :: Int -> Node n
+    toNode :: Int -> Maybe (Node n)
 
 -- |No non-negative 'Int' is smaller than 'Zero'
-instance ToNodeEx Zero where
-    toNodeEx _ = error "Out of bounds"
+instance ToNode Zero where
+    toNode _ = Nothing
 
 -- |The recursive case.
-instance ToNodeEx n => ToNodeEx (Succ n) where
-    toNodeEx 0 = FirstNode
-    toNodeEx n = NextNode $ toNodeEx $ n - 1
+instance ToNode n => ToNode (Succ n) where
+    toNode 0 = Just FirstNode
+    toNode n = NextNode <$> toNode (n - 1)
 
 -- |A useful constraint. 'EC' 'c' 'n' '[a_0, a_1, ...] means:
--- 'ToNodeEx' 'n' and all of 'c' a_0, 'c' a_1, ...
+-- 'ToNode' 'n' and all of 'c' a_0, 'c' a_1, ...
 type family EC (c :: * -> Constraint) (n :: Nat) (a :: [*]) :: Constraint
-type instance EC c n '[] = (ToNodeEx n)
+type instance EC c n '[] = (ToNode n)
 type instance EC c n (t ': ts) = (c t, EC c n ts)
 
 -- |The AST of the callback DSL.
@@ -157,7 +158,7 @@ class TryNatsBelow c (limit :: Nat) where
         -- ^A runtime representation of the
         -> (forall (m :: Nat). c m => Proxy# m -> x)
         -- ^The function to be called
-        -> x
+        -> Maybe x
         -- ^Its return value
 
 -- |The implementation.
@@ -171,15 +172,15 @@ class TryNatsBelow' c (limit :: Nat) (acc :: Nat) where
     tryNatsBelow' ::   Proxy# '(acc, limit, c)
                     -> Int 
                     -> (forall (m :: Nat). c m => Proxy# m -> x)
-                    -> x
+                    -> Maybe x
 
 -- |@n < 'Zero'@ -- absurd.
 instance TryNatsBelow' c Zero acc where
-    tryNatsBelow' _ _ _ = error "Out of bounds"
+    tryNatsBelow' _ _ _ = Nothing
 
 -- | @(n + 1) + 'acc' == n + ('Succ' 'acc')@ and @(n + 1) < ('Succ' 'limit')@ iff @n < 'limit'@.
 instance (c acc, TryNatsBelow' c limit (Succ acc)) => TryNatsBelow' c (Succ limit) acc where
-    tryNatsBelow' _ 0 run = run (proxy# :: Proxy# acc)
+    tryNatsBelow' _ 0 run = Just $ run (proxy# :: Proxy# acc)
     tryNatsBelow' _ n run = tryNatsBelow' (proxy# :: Proxy# '(Succ acc, limit, c)) (n - 1) run
 
 
@@ -210,7 +211,8 @@ parseCallback _ = do
 
     reserved "NODES"
     arity <- fromIntegral <$> natural
-    tryNatsBelow (proxy# :: Proxy# '(maxn, Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
+    fromMaybe (fail $ "The arity " ++ show arity ++ " exceeds the bound") $
+        tryNatsBelow (proxy# :: Proxy# '(maxn, Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
   where
     rem :: forall n. (EC c n '[Int, Double, Bool], cn n) => String -> CallbackFrequency -> Proxy# n -> Parser (ParsedCallbackWrapper c cn)
     rem name freq _ = do
@@ -336,8 +338,13 @@ instance ParseConstant Double where
              <|> fromIntegral <$> integer
 
 -- |Node (parameter) identifier constants.
-instance ToNodeEx n => ParseConstant (Node n) where
-    constant = reserved "X" >> toNodeEx <$> constant
+instance ToNode n => ParseConstant (Node n) where
+    constant = do
+        reserved "X" 
+        val <- constant
+        case toNode val of
+            Just node -> pure node
+            Nothing -> fail $ "Out of bounds: " ++ show val
 
 -- |Atom class constants.
 instance ParseConstant AtomClass where
