@@ -13,6 +13,7 @@ Portability : unportable
 {-# LANGUAGE ViewPatterns #-}
 module Bio.Motions.Types where
 
+import Control.Lens
 import Linear
 import qualified Data.Vector.Unboxed as U
 
@@ -63,7 +64,8 @@ pattern MoveFromTo from to <- Move from ((+from) -> to) where
     MoveFromTo from to = Move from (to - from)
 
 -- |Represents an arbitrary atom
-data Atom = Bead BeadInfo | Binder BinderInfo
+data Atom = Bead { getBeadInfo :: BeadInfo }
+          | Binder { getBinderInfo :: BinderInfo }
     deriving (Eq, Show)
 
 -- |Represents the energy between two objects, e.g. atoms
@@ -101,22 +103,22 @@ instance HaveEnergyBetween x y => HaveEnergyBetween x (Maybe y) where
 
 -- |Represents the objects with position
 class HasPosition x where
-    -- |Returns the spatial position of the object
-    getPosition :: x -> Vec3
+    -- |A lens returning the spatial position of the object
+    position :: Functor f => (Vec3 -> f Vec3) -> x -> f x
 
 instance HasPosition Vec3 where
-    getPosition = id
-    {-# INLINE getPosition #-}
+    position = id
+    {-# INLINE position #-}
 
 instance HasPosition BinderInfo where
-    getPosition = binderPosition
-    {-# INLINE getPosition #-}
+    position f x = fmap (\p -> x { binderPosition = p }) $ f $ binderPosition x
+    {-# INLINE position #-}
 
 instance HasPosition BeadInfo where
-    getPosition = beadPosition
-    {-# INLINE getPosition #-}
+    position f x = fmap (\p -> x { beadPosition = p }) $ f $ beadPosition x
+    {-# INLINE position #-}
 
 instance HasPosition Atom where
-    getPosition (Bead bead) = getPosition bead
-    getPosition (Binder binder) = getPosition binder
-    {-# INLINE getPosition #-}
+    position f (Bead bead) = Bead <$> position f bead
+    position f (Binder binder) = Binder <$> position f binder
+    {-# INLINE position #-}

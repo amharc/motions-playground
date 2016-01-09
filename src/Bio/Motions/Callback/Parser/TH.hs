@@ -31,6 +31,7 @@ import Bio.Motions.Callback.Class
 import Bio.Motions.Callback.Parser.Parser
 import Bio.Motions.Representation.Class
 import Bio.Motions.Types
+import Control.Lens
 import Control.Monad.State.Strict
 import Data.Foldable
 import Data.Traversable
@@ -231,8 +232,8 @@ eval EvalCtx{..} (EBelongs node cls) = [||
 
 eval EvalCtx{..} (EDist lhs rhs) = [||
     sqrt $ fromIntegral $ qd
-        (getPosition $ access lhs $$(evalCtxArgs))
-        (getPosition $ access rhs $$(evalCtxArgs))
+        (access lhs $$(evalCtxArgs) ^. position)
+        (access rhs $$(evalCtxArgs) ^. position)
     ||]
 
 eval _ (ELit lit) = [|| lit ||]

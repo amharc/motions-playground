@@ -13,6 +13,7 @@ module Bio.Motions.Representation.PureChainRepresentation(PureChainRepresentatio
 import Bio.Motions.Types
 import Bio.Motions.Representation.Class
 import qualified Bio.Motions.Representation.Dump as D
+import Control.Lens
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 
@@ -59,20 +60,20 @@ instance Applicative m => Representation m PureChainRepresentation where
 
     generateMove = undefined -- TODO
 
-    performMove (MoveFromTo from to) repr = pure $ case space repr M.! from of
-        Binder binderInfo ->
-            let info' = binderInfo { binderPosition = to }
-                space' = M.insert to (Binder info') $ M.delete from $ space repr
-                Just idx = V.elemIndex binderInfo $ binders repr
-                binders' = binders repr V.// [(idx, info')]
+    performMove (MoveFromTo from to) repr
+        | Binder binderInfo <- atom = pure $
+            let Just idx = V.elemIndex binderInfo $ binders repr
+                binders' = binders repr V.// [(idx, getBinderInfo atom')]
             in  repr { space = space'
                      , binders = binders'
                      }
-        Bead beadInfo ->
-            let info' = beadInfo { beadPosition = to }
-                space' = M.insert to (Bead info') $ M.delete from $ space repr
-                chain' = chains repr V.! beadChain beadInfo V.// [(beadIndexOnChain beadInfo, info')]
+        | Bead beadInfo <- atom = pure $
+            let chain' = chains repr V.! beadChain beadInfo V.// [(beadIndexOnChain beadInfo, getBeadInfo atom')]
                 chains' = chains repr V.// [(beadChain beadInfo, chain')]
             in  repr { space = space'
                      , chains = chains'
                      }
+      where
+        atom = space repr M.! from
+        atom' = atom & position .~ to
+        space' = M.insert to atom' $ M.delete from $ space repr

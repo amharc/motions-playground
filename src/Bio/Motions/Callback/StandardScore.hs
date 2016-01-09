@@ -17,6 +17,7 @@ module Bio.Motions.Callback.StandardScore(StandardScore) where
 import Bio.Motions.Types
 import Bio.Motions.Callback.Class
 import Bio.Motions.Representation.Class
+import Control.Lens
 import Data.List
 import Data.MonoTraversable
 import Data.Foldable
@@ -62,7 +63,7 @@ energyToMany repr obj poss = fold <$> traverse (energyTo repr obj) poss
 
 -- |Returns the neighbour positions for a position or something with position (e.g. an atom).
 neighbours :: HasPosition x => x -> [Vec3]
-neighbours (getPosition -> pos) = (pos ^+^) <$> ([id, negated] <*> basis)
+neighbours x = ((x ^. position) ^+^) <$> ([id, negated] <*> basis)
 
 -- |Returns the total score for beads belonging to a particular chain.
 chainScore :: (Monad m, ReadRepresentation m repr) => repr -> Int -> m StandardScore
