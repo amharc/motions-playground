@@ -26,29 +26,7 @@ import Linear
 
 import GHC.TypeLits
 
-dump :: D.Dump
-dump = D.Dump
-    { D.radius = 10
-    , D.binders =
-        [ BinderInfo (V3 0 1 2) bi0
-        , BinderInfo (V3 0 1 3) bi0
-        , BinderInfo (V3 5 5 5) bi1
-        ]
-    , D.chains =
-        [ [ BeadInfo (V3 0 1 1) be0 ev0 0 0 0
-          , BeadInfo (V3 5 6 6) be1 ev1 1 0 1
-          , BeadInfo (V3 5 5 6) be0 ev0 2 0 2
-          ]
-        , [ BeadInfo (V3 0 0 2) be0 ev0 3 1 0
-          , BeadInfo (V3 5 4 5) be1 ev1 4 1 1
-          ] 
-        ]
-    , D.beadKinds = [ev0, ev1]
-    }
-  where
-    [bi0, bi1] = BinderType <$> [0, 1]
-    [be0, be1] = BeadType <$> [0, 1]
-    [ev0, ev1] = EnergyVector . U.fromList <$> [[1, 0], [0, 1000]]
+
 
 [callback|CALLBACK "sum42-beads"
     EVERY 1
@@ -134,7 +112,7 @@ testRepr = do
             score `shouldBe` 2002
 
         it "should have the correct score after a binder move" $ do
-            score :: StandardScore <- updateCallback repr 1002 $ Move (V3 0 1 2) (V3 0 0 1)
+            score :: StandardScore <- updateCallback repr 1002 $ Move (V3 0 1 2) (V3 1 0 0)
             score `shouldBe` 1000
 
         context "template haskell callbacks" $ do
@@ -157,9 +135,74 @@ testRepr = do
             it "should have the correct list-11" $ do
                 res :: THCallback "list-11" <- runCallback repr
                 res `shouldBe` THCallback [sqrt 2, 1]
+
+
+    repr' <- performMove (Move (V3 5 6 6) (V3 0 0 (-1))) repr
+    dump' <- makeDump repr'
+
+    context "when performing a bead move" $ do
+        it "should report the old location to be empty" $ do
+            matom <- getAtomAt (V3 5 6 6) repr'
+            matom `shouldBe` Nothing
+        it "should report the new location to contain the bead" $ do
+            matom <- getAtomAt (V3 5 6 5) repr'
+            matom `shouldBe` Just (Bead $ BeadInfo (V3 5 6 5) be1 ev1 1 0 1)
+        it "should report the updated chain" $ do
+            chain <- getChain repr' 0 $ pure . otoList
+            chain `shouldBe` [ BeadInfo (V3 0 1 1) be0 ev0 0 0 0
+                             , BeadInfo (V3 5 6 5) be1 ev1 1 0 1
+                             , BeadInfo (V3 5 5 6) be0 ev0 2 0 2
+                             ]
+            chain `shouldBe` head (D.chains dump')
+        it "should report the binders to be unchanged" $ do
+            binders <- getBinders repr' $ pure . otoList
+            binders `shouldMatchList` D.binders dump
+            binders `shouldMatchList` D.binders dump'
+
+    repr'' <- performMove (Move (V3 0 1 2) (V3 1 0 0)) repr'
+    dump'' <- makeDump repr''
+
+    context "when performing a binder move" $ do
+        it "should report the old location to be empty" $ do
+            matom <- getAtomAt (V3 0 1 2) repr''
+            matom `shouldBe` Nothing
+        it "should report the new location to contain the binder" $ do
+            matom <- getAtomAt (V3 1 1 2) repr''
+            matom `shouldBe` Just (Binder $ BinderInfo (V3 1 1 2) bi0)
+        it "should not report the updated binders" $ do
+            binders <- getBinders repr'' $ pure . otoList
+            binders `shouldMatchList` [ BinderInfo (V3 1 1 2) bi0
+                                      , BinderInfo (V3 0 1 3) bi0
+                                      , BinderInfo (V3 5 5 5) bi1
+                                      ]
+            binders `shouldMatchList` D.binders dump''
+        it "should report the beads to be unchanged" $ do
+            D.chains dump'' `shouldBe` D.chains dump'
+
   where
     beads = sum $ map length $ D.chains dump
     binders = length $ D.binders dump
+    dump = D.Dump
+        { D.radius = 10
+        , D.binders =
+            [ BinderInfo (V3 0 1 2) bi0
+            , BinderInfo (V3 0 1 3) bi0
+            , BinderInfo (V3 5 5 5) bi1
+            ]
+        , D.chains =
+            [ [ BeadInfo (V3 0 1 1) be0 ev0 0 0 0
+              , BeadInfo (V3 5 6 6) be1 ev1 1 0 1
+              , BeadInfo (V3 5 5 6) be0 ev0 2 0 2
+              ]
+            , [ BeadInfo (V3 0 0 2) be0 ev0 3 1 0
+              , BeadInfo (V3 5 4 5) be1 ev1 4 1 1
+              ]
+            ]
+        , D.beadKinds = [ev0, ev1]
+        }
+    [bi0, bi1] = BinderType <$> [0, 1]
+    [be0, be1] = BeadType <$> [0, 1]
+    [ev0, ev1] = EnergyVector . U.fromList <$> [[1, 0], [0, 1000]]
 
 main :: IO ()
 main = hspec $ context "the pure chain representation" testRepr

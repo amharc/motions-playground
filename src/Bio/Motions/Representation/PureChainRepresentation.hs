@@ -59,4 +59,20 @@ instance Applicative m => Representation m PureChainRepresentation where
 
     generateMove = undefined -- TODO
 
-    performMove = undefined -- TODO
+    performMove (MoveFromTo from to) repr = pure $ case space repr M.! from of
+        Binder binderInfo ->
+            let info' = binderInfo { binderPosition = to }
+                space' = M.insert to (Binder info') $ M.delete from $ space repr
+                Just idx = V.elemIndex binderInfo $ binders repr
+                binders' = binders repr V.// [(idx, info')]
+            in  repr { space = space'
+                     , binders = binders'
+                     }
+        Bead beadInfo ->
+            let info' = beadInfo { beadPosition = to }
+                space' = M.insert to (Bead info') $ M.delete from $ space repr
+                chain' = chains repr V.! beadChain beadInfo V.// [(beadIndexOnChain beadInfo, info')]
+                chains' = chains repr V.// [(beadChain beadInfo, chain')]
+            in  repr { space = space'
+                     , chains = chains'
+                     }
