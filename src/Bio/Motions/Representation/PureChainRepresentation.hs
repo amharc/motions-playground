@@ -33,7 +33,7 @@ instance Applicative m => ReadRepresentation m PureChainRepresentation where
     getNumberOfChains PureChainRepresentation{..} = pure $ V.length chains
     {-# INLINE getNumberOfChains #-}
 
-    getChain PureChainRepresentation{..} ix f = f (chains V.! ix)
+    getChain PureChainRepresentation{..} ix f = f $ chains V.! ix
     {-# INLINE getChain #-}
 
     getAtomAt pos PureChainRepresentation{..} = pure $ M.lookup pos space
