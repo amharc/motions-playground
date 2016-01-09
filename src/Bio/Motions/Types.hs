@@ -9,6 +9,8 @@ Portability : unportable
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 module Bio.Motions.Types where
 
 import Linear
@@ -56,6 +58,9 @@ data Move = Move
     , moveDiff :: !Vec3 -- ^ The displacement
     }
     deriving (Eq, Show)
+
+pattern MoveFromTo from to <- Move from ((+from) -> to) where
+    MoveFromTo from to = Move from (to - from)
 
 -- |Represents an arbitrary atom
 data Atom = Bead BeadInfo | Binder BinderInfo

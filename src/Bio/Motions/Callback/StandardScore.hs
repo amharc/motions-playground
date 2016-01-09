@@ -10,7 +10,6 @@ Portability : unportable
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
 module Bio.Motions.Callback.StandardScore(StandardScore) where
@@ -43,10 +42,10 @@ instance Monad m => Callback m 'Pre StandardScore where
         numChains <- getNumberOfChains repr
         fold <$> traverse (chainScore repr) [0..numChains-1]
 
-    updateCallback repr prev Move{..} = do
+    updateCallback repr prev (MoveFromTo moveFrom moveTo) = do
         Just fromAtom <- getAtomAt moveFrom repr
         atFrom <- energyToMany repr fromAtom $ neighbours fromAtom
-        atTo <- energyToMany repr fromAtom $ delete moveFrom $ neighbours (moveFrom + moveDiff) 
+        atTo <- energyToMany repr fromAtom $ delete moveFrom $ neighbours moveTo
         pure $ prev - atFrom + atTo
 
 -- |Returns the score between an object and the atom placed on the specified position.
