@@ -305,7 +305,10 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
 
     atom =   (reserved "NOT" >> ENot <$> atom)
          <|> (reserved "BELONGS" >> parens (EBelongs <$> constant <* comma <*> constant))
-         <|> polyParse (proxy# :: Proxy# '(c, Ord, n, '[Int, Double])) (\sub -> do
+         <|> (try (cmp (expr :: Parser (Expr c n Int)))
+              <|>  cmp (expr :: Parser (Expr c n Double)))
+         where
+            cmp sub = do
                 lhs <- sub
                 op <-  choice
                        [ reservedOp "==" >> pure EEq
@@ -315,9 +318,7 @@ instance EC c n '[Bool, Int, Double] => Parseable c n Bool where
                        , reservedOp ">"  >> pure EGt
                        , reservedOp ">=" >> pure EGte
                        ]
-
                 op lhs <$> sub
-             )
 
 -- |A literal.
 literal :: (EC c n '[a], ParseConstant a) => Parser (Expr c n a)
@@ -350,30 +351,6 @@ instance ToNode n => ParseConstant (Node n) where
 instance ParseConstant AtomClass where
     constant =   (reserved "BEAD"   >> BeadClass   <$> constant)
              <|> (reserved "BINDER" >> BinderClass <$> constant)
-
--- |Provides a type-polymorphic 'choice'.
---
--- 'xs' is a list of types which will be tried in the specified order.
--- 'c', 'c'' are additional Constraint which ought to be satisfied by all those types.
--- 'n' is the arity, as usual.
-class PolyParse c c' n xs where
-    -- |The parsing function
-    polyParse ::
-           Proxy# '(c, c', n, xs)
-        -> (forall x. (c' x, c x) => Parser (Expr c n x) -> Parser a)
-           -- ^The parsng function
-        -> Parser a
-           -- ^The result of the first suceeding parsing function,
-           -- called with 'expr' for the respective type.
-
--- |The base case.
-instance PolyParse c c' n '[] where
-    polyParse _ _ = fail "PolyParse: no candidate suceeded"
-
--- |The recursive case.
-instance (Parseable c n x, PolyParse c c' n xs, c' x) => PolyParse c c' n (x ': xs) where
-    polyParse _ run =   try (run (expr :: Parser (Expr c n x)))
-                    <|> polyParse (proxy# :: Proxy# '(c, c', n, xs)) run
 
 -- |The language definition.
 dslDef :: P.LanguageDef st
