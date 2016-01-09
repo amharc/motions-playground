@@ -9,6 +9,7 @@ Portability : unportable
 {-# LANGUAGE FlexibleContexts #-}
 module Bio.Motions.Engine where
 
+import Bio.Motions.Types
 import Bio.Motions.Representation.Class
 import Bio.Motions.Callback.Class
 import Control.Applicative
@@ -25,7 +26,7 @@ data SimulationState repr score = SimulationState
 -- |A simple implementation (just to be sure it typechecks). TODO: rewrite.
 -- As a dirty hack, it requires the 'score' to be 'Integral'.
 simulateStep :: (Monad m, Alternative m, Representation m repr, Integral score,
-    MonadRandom m, Score m score, MonadState (SimulationState repr score) m) => m ()
+    MonadRandom m, Score m score, MonadState (SimulationState repr score) m) => m Move
 simulateStep = do
     SimulationState{..} <- get
     move <- generateMove repr
@@ -38,6 +39,8 @@ simulateStep = do
 
     newRepr <- performMove move repr
     put SimulationState { repr = newRepr, score = newScore }
+
+    pure move
   where
     factor :: Double
     factor = 2
