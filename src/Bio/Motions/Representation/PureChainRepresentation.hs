@@ -14,15 +14,18 @@ import Bio.Motions.Types
 import Bio.Motions.Representation.Class
 import qualified Bio.Motions.Representation.Dump as D
 import Control.Lens
+import Data.List
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 
 type Space = M.Map Vec3 Atom
 
 data PureChainRepresentation = PureChainRepresentation
     { space :: !Space
     , binders :: !(V.Vector BinderInfo)
-    , chains :: !(V.Vector (V.Vector BeadInfo))
+    , beads :: !(V.Vector BeadInfo)
+    , chainIndices :: !(U.Vector Int)
     , radius :: !Int
     , beadKinds :: !(V.Vector EnergyVector)
     }
@@ -31,10 +34,12 @@ instance Applicative m => ReadRepresentation m PureChainRepresentation where
     getBinders PureChainRepresentation{..} f = f binders
     {-# INLINE getBinders #-}
 
-    getNumberOfChains PureChainRepresentation{..} = pure $ V.length chains
+    getNumberOfChains PureChainRepresentation{..} = pure $ U.length chainIndices - 1
     {-# INLINE getNumberOfChains #-}
 
-    getChain PureChainRepresentation{..} ix f = f $ chains V.! ix
+    getChain PureChainRepresentation{..} ix f = f $ V.slice b (e - b) beads
+      where
+        [b, e] = U.unsafeIndex chainIndices <$> [ix, ix + 1]
     {-# INLINE getChain #-}
 
     getAtomAt pos PureChainRepresentation{..} = pure $ M.lookup pos space
@@ -43,7 +48,8 @@ instance Applicative m => ReadRepresentation m PureChainRepresentation where
 instance Applicative m => Representation m PureChainRepresentation where
     loadDump dump = pure PureChainRepresentation
         { binders = V.fromList $ D.binders dump
-        , chains = V.fromList $ V.fromList <$> D.chains dump
+        , beads = V.fromList $ concat $ D.chains dump
+        , chainIndices = U.fromList $ scanl' (+) 0 $ map length $ D.chains dump
         , space = M.fromList $
                       [(binderPosition b, Binder b) | b <- D.binders dump]
                    ++ [(beadPosition   b, Bead   b) | b <- concat (D.chains dump)]
@@ -53,25 +59,27 @@ instance Applicative m => Representation m PureChainRepresentation where
 
     makeDump repr = pure D.Dump
         { binders = V.toList $ binders repr
-        , chains = V.toList $ V.toList <$> chains repr
+        , chains = zipWith (\b e -> V.toList $ V.slice b (e - b) $ beads repr)
+                           indicesList (tail indicesList)
         , radius = radius repr
         , beadKinds = V.toList $ beadKinds repr
         }
+      where
+        indicesList = U.toList $ chainIndices repr
 
     generateMove = undefined -- TODO
 
     performMove (MoveFromTo from to) repr
         | Binder binderInfo <- atom = pure $
             let Just idx = V.elemIndex binderInfo $ binders repr
-                binders' = binders repr V.// [(idx, getBinderInfo atom')]
+                binders' = binders repr V.// [(idx, binderInfo & position .~ to)]
             in  repr { space = space'
                      , binders = binders'
                      }
         | Bead beadInfo <- atom = pure $
-            let chain' = chains repr V.! beadChain beadInfo V.// [(beadIndexOnChain beadInfo, getBeadInfo atom')]
-                chains' = chains repr V.// [(beadChain beadInfo, chain')]
+            let beads' = beads repr V.// [(beadAtomIndex beadInfo, beadInfo & position .~ to)]
             in  repr { space = space'
-                     , chains = chains'
+                     , beads = beads'
                      }
       where
         atom = space repr M.! from
