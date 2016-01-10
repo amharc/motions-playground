@@ -189,7 +189,9 @@ class EC c n a => ECc c a n
 instance EC c n a => ECc c a n
 
 -- |A convenient wrapper. See 'parseCallback'.
-type MaxNConstraint c cn maxn = (EC c maxn '[Int, Double, Bool], TryNatsBelow (Both (ECc c '[Int, Double, Bool]) cn) maxn)
+type MaxNConstraint c cn maxn = ( EC c maxn '[Int, Double, Bool]
+                                , TryNatsBelow (Both (ECc c '[Int, Double, Bool]) cn) maxn
+                                )
 
 -- |@Both c1 c2 a@ iff @(c1 a, c2 a)@.
 class (c1 a, c2 a) => Both c1 c2 a
@@ -214,7 +216,8 @@ parseCallback _ = do
     fromMaybe (fail $ "The arity " ++ show arity ++ " exceeds the bound") $
         tryNatsBelow (proxy# :: Proxy# '(maxn, Both (ECc c '[Int, Double, Bool]) cn)) arity (rem name freq)
   where
-    rem :: forall n. (EC c n '[Int, Double, Bool], cn n) => String -> CallbackFrequency -> Proxy# n -> Parser (ParsedCallbackWrapper c cn)
+    rem :: forall n. (EC c n '[Int, Double, Bool], cn n) => String -> CallbackFrequency
+        -> Proxy# n -> Parser (ParsedCallbackWrapper c cn)
     rem name freq _ = do
         reserved "WHERE"
         cond <- expr :: Parser (Expr c n Bool)
@@ -231,7 +234,8 @@ parseCallback _ = do
                 , callbackResult = result
                 }
 
-    parseCallbackWithArity :: (EC c n '[Int, Double, Bool, a], Parseable c n a) => Parser (CallbackResult c n a)
+    parseCallbackWithArity :: (EC c n '[Int, Double, Bool, a], Parseable c n a)
+        => Parser (CallbackResult c n a)
     parseCallbackWithArity = (reserved "SUM" >> CallbackSum <$> expr)
                            <|> (reserved "PRODUCT" >> CallbackProduct <$> expr)
                            <|> (reserved "LIST" >> CallbackList <$> expr)
