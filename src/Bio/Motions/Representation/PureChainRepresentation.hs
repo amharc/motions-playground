@@ -96,13 +96,13 @@ instance Applicative m => Representation m PureChainRepresentation where
     performMove (MoveFromTo from to) repr
         | Binder binderInfo <- atom = pure $
             let Just idx = V.elemIndex binderInfo $ binders repr
-            in  repr { space = space'
-                     , binders = binders repr V.// [(idx, binderInfo & position .~ to)]
-                     }
-        | Bead beadInfo <- atom = pure $
-            repr { space = space'
-                 , beads = beads repr V.// [(beadAtomIndex beadInfo, beadInfo & position .~ to)]
-                 }
+            in  (repr { space = space'
+                      , binders = binders repr V.// [(idx, binderInfo & position .~ to)]
+                      }, [])
+        | Bead beadInfo <- atom = pure
+            (repr { space = space'
+                  , beads = beads repr V.// [(beadAtomIndex beadInfo, beadInfo & position .~ to)]
+                  }, [])
       where
         atom = space repr M.! from
         atom' = atom & position .~ to

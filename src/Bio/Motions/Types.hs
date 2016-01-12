@@ -13,7 +13,6 @@ Portability : unportable
 {-# LANGUAGE ViewPatterns #-}
 module Bio.Motions.Types where
 
-import Control.Lens
 import Linear
 import qualified Data.Vector.Unboxed as U
 
@@ -67,6 +66,11 @@ pattern MoveFromTo from to <- Move from ((+from) -> to) where
 data Atom = Bead { getBeadInfo :: BeadInfo }
           | Binder { getBinderInfo :: BinderInfo }
     deriving (Eq, Show)
+
+-- |Represents an additional addition or removal of a binder
+-- due to a 'Move'.
+data BinderChange = AddBinder BinderInfo -- ^ Addition of a binder
+                  | RemoveBinder BinderInfo -- ^ Removal of a binder
 
 -- |Represents the energy between two objects, e.g. atoms
 class HaveEnergyBetween x y where

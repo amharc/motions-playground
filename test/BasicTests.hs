@@ -138,7 +138,7 @@ testRepr = do
                 res `shouldBe` THCallback [sqrt 2, 1]
 
 
-    repr' <- performMove (Move (V3 5 6 6) (V3 0 0 (-1))) repr
+    repr' <- fst <$> performMove (Move (V3 5 6 6) (V3 0 0 (-1))) repr
     dump' <- makeDump repr'
 
     context "when performing a bead move" $ do
@@ -160,7 +160,7 @@ testRepr = do
             binders `shouldMatchList` D.binders dump
             binders `shouldMatchList` D.binders dump'
 
-    repr'' <- performMove (Move (V3 0 1 2) (V3 1 0 0)) repr'
+    repr'' <- fst <$> performMove (Move (V3 0 1 2) (V3 1 0 0)) repr'
     dump'' <- makeDump repr''
 
     context "when performing a binder move" $ do

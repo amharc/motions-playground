@@ -33,7 +33,7 @@ class ReadRepresentation m repr => Representation m repr where
     generateMove :: (MonadRandom m, Alternative m) => repr -> m Move
 
     -- |Applies a 'Move' to the state
-    performMove :: Move -> repr -> m repr
+    performMove :: Move -> repr -> m (repr, [BinderChange])
 
 -- |A read-only interface to a 'Representation' 
 class ReadRepresentation m repr where

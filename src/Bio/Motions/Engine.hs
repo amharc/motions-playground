@@ -37,7 +37,7 @@ simulateStep = do
         r <- getRandomR (0, 1)
         guard $ r < exp (delta * factor)
 
-    newRepr <- performMove move repr
+    (newRepr, _) <- performMove move repr
     put SimulationState { repr = newRepr, score = newScore }
 
     pure move
